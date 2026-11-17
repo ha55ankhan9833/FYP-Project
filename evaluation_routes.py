@@ -113,6 +113,46 @@ def teacher_finalize_evaluation(submission_id):
         return _handle(exc, "finalize evaluation")
 
 
+@evaluation_bp.route(
+    "/api/submissions/<int:submission_id>/evaluation/manual-grade",
+    methods=["POST"])
+@jwt_required()
+def teacher_manual_grade(submission_id):
+    """
+    Explicit MANUAL GRADING FALLBACK for a submission automatic grading
+    has not processed (job PENDING) or could not process (job FAILED).
+    Records MANUALLY_GRADED; never fabricates tests or AI marks.
+    """
+    teacher_id = _identity("teacher")
+    if teacher_id is None:
+        return _error("Teacher access required", 403)
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _error("Valid JSON object required", 400)
+    allowed = {"final_score", "justification", "instructor_feedback",
+               "confirm_manual_grade"}
+    unknown = set(data) - allowed
+    if unknown:
+        return _error("Unknown fields: " + ", ".join(sorted(unknown)), 400)
+    if data.get("confirm_manual_grade") is not True:
+        return _error("confirm_manual_grade must be true to grade manually", 400)
+    for field in ("final_score", "justification"):
+        if field not in data:
+            return _error(f"{field} is required", 400)
+
+    from manual_grading_service import manually_grade_submission
+    try:
+        result = manually_grade_submission(
+            submission_id, teacher_id, data["final_score"],
+            data["justification"], data.get("instructor_feedback"))
+        return jsonify({"status": "success",
+                        "message": "Submission manually graded",
+                        "evaluation": result}), 200
+    except Exception as exc:
+        return _handle(exc, "grade submission manually")
+
+
 @evaluation_bp.route("/api/grading/status", methods=["GET"])
 @jwt_required()
 def grading_status():

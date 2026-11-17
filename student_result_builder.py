@@ -31,6 +31,10 @@ CENT = Decimal("0.01")
 DEV_EVIDENCE_LABEL_PREFIX = "[DEVELOPMENT TEST"
 TEACHER_ONLY_MARKER = "=== Python verification report (teacher only) ==="
 
+# Evaluations with no automatic test evidence (infrastructure-failure
+# manual grade, and the teacher's explicit manual-grading fallback).
+MANUAL_STATUSES = ("MANUAL_GRADING", "MANUALLY_GRADED")
+
 TEACHER_APPROVED = "TEACHER_APPROVED"
 AI_ACCEPTED = "AI_RECOMMENDATION_ACCEPTED_BY_TEACHER"
 FINAL_TOTAL_ONLY = "FINAL_TOTAL_ONLY"
@@ -58,7 +62,7 @@ def verified_test_marks(auto_status, tests_passed, tests_run, total_marks,
     test_alloc, _ = split_allocation(total_marks, validation_percentage)
     if auto_status == "COMPILATION_FAILED":
         return Decimal("0.00"), test_alloc
-    if auto_status == "MANUAL_GRADING":
+    if auto_status in MANUAL_STATUSES:
         return None, test_alloc
     if test_alloc == 0:
         return Decimal("0.00"), test_alloc
@@ -81,7 +85,8 @@ def compilation_diagnostics(feedback):
 
 def outcome_of(auto_status):
     return {"COMPILATION_FAILED": "COMPILATION_FAILED",
-            "MANUAL_GRADING": "MANUAL_GRADE"}.get(auto_status, "GRADED")
+            "MANUAL_GRADING": "MANUAL_GRADE",
+            "MANUALLY_GRADED": "MANUALLY_GRADED"}.get(auto_status, "GRADED")
 
 
 def build_student_result(*, final_score, total_marks, validation_percentage,
@@ -126,7 +131,11 @@ def build_student_result(*, final_score, total_marks, validation_percentage,
 
     outcome = outcome_of(auto_status)
     summary = []
-    if outcome == "COMPILATION_FAILED":
+    if outcome == "MANUALLY_GRADED":
+        # No tests ran: do not present 0/0 as a test result.
+        tests_passed = tests_run = None
+        summary.append("Your teacher graded this submission manually.")
+    elif outcome == "COMPILATION_FAILED":
         summary.append("Your program did not compile, so no tests were run. "
                        "See the compiler diagnostics.")
     elif tests_run:

@@ -91,8 +91,10 @@ Every error is JSON:
 
 - **Results:** a student result is `null` until the teacher finalizes; the
   status is `SUBMITTED` / `GRADING` / `UNDER_REVIEW` / `RESULT_PUBLISHED`.
-- **Grading:** with execution disabled, real submissions stay `QUEUED`. Show
-  "awaiting secure grading" (gap G2).
+- **Grading:** with execution disabled, real submissions stay `QUEUED`. Offer
+  the teacher an explicit "Grade manually" action
+  (`POST …/evaluation/manual-grade`, with `confirm_manual_grade: true` and a
+  justification). Label such results `MANUALLY_GRADED`, with no test counts.
 - **Criterion editing:** show it only when the teacher evaluation has
   `criterion_approval_available: true` (it is false on FYP_Database until
   migration M3).

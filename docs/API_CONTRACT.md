@@ -188,9 +188,51 @@ Returns:
   - `mode` is `MANUAL_GRADE` when the job is `FAILED` (infrastructure) and no
     evaluation exists.
 - **409** if the evaluation is already finalized (finalized marks are
-  immutable), or if grading has not finished. A job that stays `PENDING`
-  cannot be finalized yet (gap G2).
+  immutable), or if grading has not finished. For a job that stays
+  `PENDING`, use the manual grading fallback below.
 - **Errors:** 404 for another teacher, 403 for a student.
+
+### `POST /api/submissions/<submission_id>/evaluation/manual-grade` (teacher, owner only)
+An explicit **manual grading fallback** for a submission that automatic
+grading has not processed (job `PENDING`, for example while secure execution
+is disabled) or could not process (job `FAILED`).
+
+```json
+{"confirm_manual_grade": true, "final_score": "6.50",
+ "justification": "Why this was graded manually (10–2000 characters, teacher-only audit)",
+ "instructor_feedback": "Optional text shown to the student"}
+```
+
+**Success:** 200 `{status, message, evaluation{submission_id, final_score, result_status: "FINALIZED", mode: "MANUALLY_GRADED", previous_job_status}}`.
+
+**What it records, in one transaction:**
+- An Evaluation with `auto_evaluation_status` `MANUALLY_GRADED`, finalized,
+  with no suggested score, 0/0 tests and no criteria. Its
+  `auto_evaluation_feedback` holds a teacher-only audit record: teacher,
+  UTC time, justification, final mark and the previous job state.
+- The job is set to `COMPLETED` with `worker_id` `manual-grade:<teacher>`,
+  so the automatic worker never picks it up afterwards.
+
+Nothing is fabricated: no compilation result, test passes, verified test
+marks or AI marks.
+
+**The teacher view adds** `evaluation.manual_grading`, the parsed audit record.
+
+**Students see** `outcome: "MANUALLY_GRADED"`, the final mark and the
+instructor feedback. `tests_passed`, `tests_run` and `test_marks` are
+`null`, and the justification is never shown to them.
+
+**Errors:**
+- **400:** `confirm_manual_grade` is not `true`; a missing or short
+  justification; an out-of-range score or one with more than 2 decimals;
+  unknown fields; or instructor feedback that quotes hidden test data.
+- **403:** a student.
+- **404:** another teacher, or an unknown submission.
+- **409:**
+  - an evaluation already exists (automatic, AI or manual; use finalize);
+  - a worker holds the job (`PROCESSING`, active or expired lease);
+  - the job is in any other state;
+  - a concurrent change happened.
 
 ### `GET /api/grading/status` (teacher)
 `{"status":"success","student_execution_enabled":false,"sandbox":null,"reason":"...","active_database":"FYP_Database"|"FYP_E2E_Test"}`.
@@ -214,5 +256,5 @@ The published breakdown therefore never contradicts `final_score`.
 `compilation_diagnostics` is set only when `outcome` is `COMPILATION_FAILED`.
 
 Recommended polling for submission status: every 10–15 s while `SUBMITTED`/`GRADING`.
-With execution disabled, real submissions remain `SUBMITTED` until a manual-grade
-path exists (gap G2).
+With execution disabled, real submissions remain `SUBMITTED` until the teacher
+uses the manual grading fallback (`outcome: "MANUALLY_GRADED"`).

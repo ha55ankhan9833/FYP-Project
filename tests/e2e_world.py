@@ -415,6 +415,38 @@ class World:
         return ([(e["result_status"], e["auto_status"], e["passed"], e["run"])]
                 if e else []), -1
 
+    # --- manual-grading fallback
+    def manual_lock(self, conn, p):
+        s = self.subs.get(p[0])
+        if s is None or p[1] != self.assessment["teacher_id"]:
+            return [], -1
+        j = self._job_of(p[0])
+        if j is None:
+            return [(self.assessment["total"], 5, None, None, None, 0, self.now)], -1
+        active = 1 if j["lease"] is not None and j["lease"] > self.now else 0
+        return [(self.assessment["total"], 5, j["job_id"], j["status"],
+                 j["attempts"], active, self.now)], -1
+
+    def manual_lock_evaluation(self, conn, p):
+        e = self.evals.get(p[0])
+        return ([(e["result_status"], e["auto_status"])] if e else []), -1
+
+    def manual_close_job(self, conn, p):
+        worker, job_id, sid = p
+        job = self.jobs.get(job_id)
+        if job is None or job["submission_id"] != sid or \
+                job["status"] not in ("PENDING", "FAILED"):
+            return [], 0
+        self._update_job(conn, job_id, status="COMPLETED", completed=self.now,
+                         worker=worker, token=None, lease=None)
+        return [], 1
+
+    def insert_manual_evaluation(self, conn, p):
+        self._insert_eval(conn, p[0], auto_status="MANUALLY_GRADED",
+                          feedback=p[1], final=Decimal(str(p[2])),
+                          result_status="FINALIZED", instructor=p[3])
+        return [], 1
+
     # --- teacher-approved criterion marks (table exists only after the
     #     approved migration; approval_table toggles it in tests)
     def approval_table_exists(self, conn, p):
@@ -504,6 +536,12 @@ class World:
          count_student_submissions),
         ("INSERT INTO dbo.Submission", insert_submission),
         ("INSERT INTO dbo.GradingJob", insert_job),
+        ("SELECT a.total_marks, a.assessment_id, j.job_id, j.job_status", manual_lock),
+        ("SELECT result_status, auto_evaluation_status FROM dbo.Evaluation WITH",
+         manual_lock_evaluation),
+        ("worker_id = ?, claim_token = NULL, lease_expires_at = NULL "
+         "WHERE job_id = ? AND submission_id = ?", manual_close_job),
+        ("VALUES (?, NULL, 'MANUALLY_GRADED'", insert_manual_evaluation),
         ("last_error = 'Maximum grading attempts exhausted'", mark_exhausted),
         ("SET job_status = CASE WHEN attempt_count >= ?", release),
         ("SET job_status = 'COMPLETED'", complete_job),

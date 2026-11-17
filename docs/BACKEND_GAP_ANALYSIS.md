@@ -115,7 +115,7 @@ until a manual-grade path exists.
 1. [x] **G5** Git initialized locally; initial commit `3f55536` (166 reviewed files, no remote).
 2. [x] **G6** `requirements.txt`, `requirements-lock.txt` and `requirements-ai.txt` written; `docs/SETUP_AND_SERVICES.md` added.
 3. [x] **G1 (development)** Dev-server proxy documented in `docs/FRONTEND_INTEGRATION.md`; no package needed. Cross-origin production still needs `flask-cors` (install approval) or a same-origin reverse proxy.
-4. [ ] **G2** Decide and implement the manual-grade path for PENDING submissions while execution is disabled. **Needs your policy decision.**
+4. [x] **G2** Teacher-only manual grading fallback (`POST /api/submissions/<id>/evaluation/manual-grade`, `manual_grading_service.py`): code only, no schema change; covered by `tests/test_manual_grading.py`.
 5. [x] **G3** Uniform JSON errors (`api_errors.py`): AI draft routes, JWT failures and 404/405/500. Status codes unchanged; covered by `tests/test_api_errors.py`.
 6. [ ] **G7** Decide M3, or confirm the frontend must handle `criterion_approval_available = false`. **Needs your approval.**
 7. [x] **G4** `docs/API_CONTRACT.md` updated: error contract, AI routes, teacher evaluation fields, finalize `criteria`, status fields.

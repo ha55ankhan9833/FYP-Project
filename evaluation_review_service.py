@@ -307,6 +307,9 @@ def get_teacher_submission_evaluation(submission_id, teacher_id,
                 # Backward-compatible alias of ai_criteria.
                 "criteria": _criteria(cursor, submission_id)
             }
+            from manual_grading_service import parse_manual_record
+            # Teacher-only audit record of a manual-grading fallback.
+            evaluation["manual_grading"] = parse_manual_record(e[2])
             evaluation["ai_criteria"] = evaluation["criteria"]
             evaluation["teacher_criteria"] = _approved_criteria(cursor,
                                                                 submission_id)
