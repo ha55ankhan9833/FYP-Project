@@ -6,19 +6,34 @@ VALID_CATEGORIES = {"value", "code"}
 VALID_ACTIONS = {"ACCEPT", "EDIT", "DELETE", "ADD"}
 
 
+def _clean_warnings(items):
+    """Keep only well-formed {code, message} warnings from the AI service."""
+    cleaned = []
+    for item in items if isinstance(items, list) else []:
+        if (isinstance(item, dict) and isinstance(item.get("code"), str)
+                and isinstance(item.get("message"), str)):
+            cleaned.append({"code": item["code"][:64],
+                            "message": item["message"][:500]})
+    return cleaned
+
+
 def create_draft(ai_result):
 
     constraints = []
 
     for item in ai_result.get("value_constraints", []):
-        constraints.append({
+        entry = {
             "id": str(uuid.uuid4()),
             "category": "value",
             "text": item.get("text", ""),
             "source": "AI",
             "review_status": "PENDING",
             "evidence_status": item.get("status", "UNVERIFIED")
-        })
+        }
+        item_warnings = _clean_warnings(item.get("warnings"))
+        if item_warnings:
+            entry["warnings"] = item_warnings
+        constraints.append(entry)
 
     for item in ai_result.get("code_constraints", []):
         constraints.append({
@@ -32,7 +47,7 @@ def create_draft(ai_result):
             )
         })
 
-    return {
+    draft = {
         "draft_id": str(uuid.uuid4()),
         "constraints": constraints,
         "approval": {
@@ -41,6 +56,14 @@ def create_draft(ai_result):
         },
         "finalized": False
     }
+
+    # e.g. INPUT_TOO_LONG: the model was not run, so the teacher must add the
+    # value constraints manually. Informational only; approval is unchanged.
+    ai_warnings = _clean_warnings(ai_result.get("warnings"))
+    if ai_warnings:
+        draft["ai_warnings"] = ai_warnings
+
+    return draft
 
 
 def apply_action(draft, action, category, constraint_id=None, text=None):

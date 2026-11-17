@@ -1,0 +1,127 @@
+{
+ "source": "FYP_DATASET_P001_P7411_FINAL_VERIFIED.json Value_Constraints (sha256 b77745760e7f...)",
+ "encoder": "notebook cell 86 encode_constraint, executed from the notebook source",
+ "token_counts": "models/flan_t5_constraint_final/tokenizer.json, incl. </s>",
+ "samples": [
+  {
+   "problem_id": "P001",
+   "text": "1 <= N <= 100000; -10^9 <= change[i] <= 10^9. Prefix sums fit in signed 64-bit integer.",
+   "notebook_encoded": "1[SP][B3C]=[SP]N[SP][B3C]=[SP]100000;[SP]-10[B5E]9[SP][B3C]=[SP]change[B5B]i[B5D][SP][B3C]=[SP]10[B5E]9.[SP]Prefix[SP]sums[SP]fit[SP]in[SP]signed[SP]64-bit[SP]integer.",
+   "encoded_tokens": 117
+  },
+  {
+   "problem_id": "P002",
+   "text": "1 <= line length <= 100000. Every character is an ASCII character.",
+   "notebook_encoded": "1[SP][B3C]=[SP]line[SP]length[SP][B3C]=[SP]100000.[SP]Every[SP]character[SP]is[SP]an[SP]ASCII[SP]character.",
+   "encoded_tokens": 61
+  },
+  {
+   "problem_id": "P003",
+   "text": "1 <= R,C <= 200; -10^9 <= height <= 10^9; all R*C heights are distinct.",
+   "notebook_encoded": "1[SP][B3C]=[SP]R,C[SP][B3C]=[SP]200;[SP]-10[B5E]9[SP][B3C]=[SP]height[SP][B3C]=[SP]10[B5E]9;[SP]all[SP]R*C[SP]heights[SP]are[SP]distinct.",
+   "encoded_tokens": 102
+  },
+  {
+   "problem_id": "P004",
+   "text": "1 <= N <= 100000; -10^9 <= reading[i] <= 10^9.",
+   "notebook_encoded": "1[SP][B3C]=[SP]N[SP][B3C]=[SP]100000;[SP]-10[B5E]9[SP][B3C]=[SP]reading[B5B]i[B5D][SP][B3C]=[SP]10[B5E]9.",
+   "encoded_tokens": 83
+  },
+  {
+   "problem_id": "P220",
+   "text": "1<=N<=200000; D>=0; |A[i]|<=10^9.",
+   "notebook_encoded": "1[B3C]=N[B3C]=200000;[SP]D[B3E]=0;[SP]|A[B5B]i[B5D]|[B3C]=10[B5E]9.",
+   "encoded_tokens": 60
+  },
+  {
+   "problem_id": "P370",
+   "text": "Coefficients have magnitude at most 10^6; a is nonzero and b²-4ac is strictly positive.",
+   "notebook_encoded": "Coefficients[SP]have[SP]magnitude[SP]at[SP]most[SP]10[B5E]6;[SP]a[SP]is[SP]nonzero[SP]and[SP]b[BC2][BB2]-4ac[SP]is[SP]strictly[SP]positive.",
+   "encoded_tokens": 81
+  },
+  {
+   "problem_id": "P869",
+   "text": "2 <= n <= 9; values in [-9,9]; target in [-10000,10000]; branches with |value| > 100000 are discarded.",
+   "notebook_encoded": "2[SP][B3C]=[SP]n[SP][B3C]=[SP]9;[SP]values[SP]in[SP][B5B]-9,9[B5D];[SP]target[SP]in[SP][B5B]-10000,10000[B5D];[SP]branches[SP]with[SP]|value|[SP][B3E][SP]100000[SP]are[SP]discarded.",
+   "encoded_tokens": 119
+  },
+  {
+   "problem_id": "P1284",
+   "text": "1 <= |S| <= 10000; S contains only A–Z, a–z, digits, and underscore.",
+   "notebook_encoded": "1[SP][B3C]=[SP]|S|[SP][B3C]=[SP]10000;[SP]S[SP]contains[SP]only[SP]A[BE2][B80][B93]Z,[SP]a[BE2][B80][B93]z,[SP]digits,[SP]and[SP]underscore.",
+   "encoded_tokens": 99
+  },
+  {
+   "problem_id": "P1439",
+   "text": "W in {8, 16, 32, 64}; 1 <= K <= 1000; the initial value and every y fit in a signed W-bit integer.",
+   "notebook_encoded": "W[SP]in[SP][B7B]8,[SP]16,[SP]32,[SP]64[B7D];[SP]1[SP][B3C]=[SP]K[SP][B3C]=[SP]1000;[SP]the[SP]initial[SP]value[SP]and[SP]every[SP]y[SP]fit[SP]in[SP]a[SP]signed[SP]W-bit[SP]integer.",
+   "encoded_tokens": 121
+  },
+  {
+   "problem_id": "P1453",
+   "text": "1 <= T <= 256; every string has exactly 8 characters from {0, 1}.",
+   "notebook_encoded": "1[SP][B3C]=[SP]T[SP][B3C]=[SP]256;[SP]every[SP]string[SP]has[SP]exactly[SP]8[SP]characters[SP]from[SP][B7B]0,[SP]1[B7D].",
+   "encoded_tokens": 80
+  },
+  {
+   "problem_id": "P2237",
+   "text": "1 <= N <= 100000\n-10^9 <= x_i, y_i <= 10^9\n(x_i, y_i) != (0, 0)",
+   "notebook_encoded": "1[SP][B3C]=[SP]N[SP][B3C]=[SP]100000[NL]-10[B5E]9[SP][B3C]=[SP]x_i,[SP]y_i[SP][B3C]=[SP]10[B5E]9[NL](x_i,[SP]y_i)[SP]!=[SP](0,[SP]0)",
+   "encoded_tokens": 111
+  },
+  {
+   "problem_id": "P2239",
+   "text": "-10^9 <= coordinates <= 10^9\nEither x1 == x2 or y1 == y2",
+   "notebook_encoded": "-10[B5E]9[SP][B3C]=[SP]coordinates[SP][B3C]=[SP]10[B5E]9[NL]Either[SP]x1[SP]==[SP]x2[SP]or[SP]y1[SP]==[SP]y2",
+   "encoded_tokens": 82
+  },
+  {
+   "problem_id": "P2282",
+   "text": "-10^6 <= coordinates <= 10^6\\n1 <= R <= 10^6\\n(x1, y1) != (x2, y2)",
+   "notebook_encoded": "-10[B5E]6[SP][B3C]=[SP]coordinates[SP][B3C]=[SP]10[B5E]6[B5C]n1[SP][B3C]=[SP]R[SP][B3C]=[SP]10[B5E]6[B5C]n(x1,[SP]y1)[SP]!=[SP](x2,[SP]y2)",
+   "encoded_tokens": 112
+  },
+  {
+   "problem_id": "P4172",
+   "text": "1 <= K <= N <= 10^5\n-10^4 <= T_i <= 10^4\nComputations may produce values up to ~10^14, requiring 64-bit integers (long long).",
+   "notebook_encoded": "1[SP][B3C]=[SP]K[SP][B3C]=[SP]N[SP][B3C]=[SP]10[B5E]5[NL]-10[B5E]4[SP][B3C]=[SP]T_i[SP][B3C]=[SP]10[B5E]4[NL]Computations[SP]may[SP]produce[SP]values[SP]up[SP]to[SP][B7E]10[B5E]14,[SP]requiring[SP]64-bit[SP]integers[SP](long[SP]long).",
+   "encoded_tokens": 161
+  },
+  {
+   "problem_id": "P4188",
+   "text": "1 <= K <= N <= 10^5\n1 <= T, P_i <= 10^6\n1 <= V_i <= 10^4\nTotal volume-price product can reach ~10^15, requiring 64-bit integers.",
+   "notebook_encoded": "1[SP][B3C]=[SP]K[SP][B3C]=[SP]N[SP][B3C]=[SP]10[B5E]5[NL]1[SP][B3C]=[SP]T,[SP]P_i[SP][B3C]=[SP]10[B5E]6[NL]1[SP][B3C]=[SP]V_i[SP][B3C]=[SP]10[B5E]4[NL]Total[SP]volume-price[SP]product[SP]can[SP]reach[SP][B7E]10[B5E]15,[SP]requiring[SP]64-bit[SP]integers.",
+   "encoded_tokens": 186
+  },
+  {
+   "problem_id": "P1599",
+   "text": "1 <= T <= 30; p is a prime with 5 <= p <= 2000000; 0 <= a, b < p and (4a^3 + 27b^2) mod p != 0; 0 <= x, y < p and y^2 = x^3 + a*x + b (mod p). By Hasse's theorem N <= p + 1 + 2*sqrt(p) < 2.1*10^6, so N and the order fit easily in 32-bit integers.",
+   "notebook_encoded": "1[SP][B3C]=[SP]T[SP][B3C]=[SP]30;[SP]p[SP]is[SP]a[SP]prime[SP]with[SP]5[SP][B3C]=[SP]p[SP][B3C]=[SP]2000000;[SP]0[SP][B3C]=[SP]a,[SP]b[SP][B3C][SP]p[SP]and[SP](4a[B5E]3[SP]+[SP]27b[B5E]2)[SP]mod[SP]p[SP]!=[SP]0;[SP]0[SP][B3C]=[SP]x,[SP]y[SP][B3C][SP]p[SP]and[SP]y[B5E]2[SP]=[SP]x[B5E]3[SP]+[SP]a*x[SP]+[SP]b[SP](mod[SP]p).[SP]By[SP]Hasse's[SP]theorem[SP]N[SP][B3C]=[SP]p[SP]+[SP]1[SP]+[SP]2*sqrt(p)[SP][B3C][SP]2.1*10[B5E]6,[SP]so[SP]N[SP]and[SP]the[SP]order[SP]fit[SP]easily[SP]in[SP]32-bit[SP]integers.",
+   "encoded_tokens": 384
+  },
+  {
+   "problem_id": "P1653",
+   "text": "1 <= n <= 40; w is superincreasing with w_1 >= 1; sum(w) < q <= 2 * 10^17; 1 <= r < q and gcd(r, q) = 1; 1 <= T <= 20; 0 <= c <= 8 * 10^18, and each c is the sum of a subset of the public key beta_i = r * w_i mod q.",
+   "notebook_encoded": "1[SP][B3C]=[SP]n[SP][B3C]=[SP]40;[SP]w[SP]is[SP]superincreasing[SP]with[SP]w_1[SP][B3E]=[SP]1;[SP]sum(w)[SP][B3C][SP]q[SP][B3C]=[SP]2[SP]*[SP]10[B5E]17;[SP]1[SP][B3C]=[SP]r[SP][B3C][SP]q[SP]and[SP]gcd(r,[SP]q)[SP]=[SP]1;[SP]1[SP][B3C]=[SP]T[SP][B3C]=[SP]20;[SP]0[SP][B3C]=[SP]c[SP][B3C]=[SP]8[SP]*[SP]10[B5E]18,[SP]and[SP]each[SP]c[SP]is[SP]the[SP]sum[SP]of[SP]a[SP]subset[SP]of[SP]the[SP]public[SP]key[SP]beta_i[SP]=[SP]r[SP]*[SP]w_i[SP]mod[SP]q.",
+   "encoded_tokens": 338
+  },
+  {
+   "problem_id": "P3964",
+   "text": "3 <= R, C <= 1000; R * C <= 500,000; 1 <= Q <= 200,000; 0 <= r1 < r3 <= r4 < r2 < R; 0 <= c1 < c3 <= c4 < c2 < C; 0 <= A[r][c] <= 10^9. All sum calculations require 64-bit integer arithmetic.",
+   "notebook_encoded": "3[SP][B3C]=[SP]R,[SP]C[SP][B3C]=[SP]1000;[SP]R[SP]*[SP]C[SP][B3C]=[SP]500,000;[SP]1[SP][B3C]=[SP]Q[SP][B3C]=[SP]200,000;[SP]0[SP][B3C]=[SP]r1[SP][B3C][SP]r3[SP][B3C]=[SP]r4[SP][B3C][SP]r2[SP][B3C][SP]R;[SP]0[SP][B3C]=[SP]c1[SP][B3C][SP]c3[SP][B3C]=[SP]c4[SP][B3C][SP]c2[SP][B3C][SP]C;[SP]0[SP][B3C]=[SP]A[B5B]r[B5D][B5B]c[B5D][SP][B3C]=[SP]10[B5E]9.[SP]All[SP]sum[SP]calculations[SP]require[SP]64-bit[SP]integer[SP]arithmetic.",
+   "encoded_tokens": 330
+  },
+  {
+   "problem_id": "P1683",
+   "text": "1 <= T <= 10; 3 <= n <= 20; 1 <= k <= n - 2; 2 <= m_1 < m_2 < ... < m_n <= 10^9 pairwise coprime; m_1 ... m_k <= 10^18; m_1 ... m_n <= 10^36; 0 <= r_i < m_i; at most one residue is corrupted.",
+   "notebook_encoded": "1[SP][B3C]=[SP]T[SP][B3C]=[SP]10;[SP]3[SP][B3C]=[SP]n[SP][B3C]=[SP]20;[SP]1[SP][B3C]=[SP]k[SP][B3C]=[SP]n[SP]-[SP]2;[SP]2[SP][B3C]=[SP]m_1[SP][B3C][SP]m_2[SP][B3C][SP]...[SP][B3C][SP]m_n[SP][B3C]=[SP]10[B5E]9[SP]pairwise[SP]coprime;[SP]m_1[SP]...[SP]m_k[SP][B3C]=[SP]10[B5E]18;[SP]m_1[SP]...[SP]m_n[SP][B3C]=[SP]10[B5E]36;[SP]0[SP][B3C]=[SP]r_i[SP][B3C][SP]m_i;[SP]at[SP]most[SP]one[SP]residue[SP]is[SP]corrupted.",
+   "encoded_tokens": 328
+  },
+  {
+   "problem_id": "P1679",
+   "text": "1 <= T <= 60; q is prime with 2 <= q <= 10^9; |x|, |y| <= 10^18; 1 <= n <= 10^15; if x, y are non-zero with equal finite valuations of q, then after removing the common power of q the remaining parts satisfy q = 2 or q | x' - y' or q | x' + y'.",
+   "notebook_encoded": "1[SP][B3C]=[SP]T[SP][B3C]=[SP]60;[SP]q[SP]is[SP]prime[SP]with[SP]2[SP][B3C]=[SP]q[SP][B3C]=[SP]10[B5E]9;[SP]|x|,[SP]|y|[SP][B3C]=[SP]10[B5E]18;[SP]1[SP][B3C]=[SP]n[SP][B3C]=[SP]10[B5E]15;[SP]if[SP]x,[SP]y[SP]are[SP]non-zero[SP]with[SP]equal[SP]finite[SP]valuations[SP]of[SP]q,[SP]then[SP]after[SP]removing[SP]the[SP]common[SP]power[SP]of[SP]q[SP]the[SP]remaining[SP]parts[SP]satisfy[SP]q[SP]=[SP]2[SP]or[SP]q[SP]|[SP]x'[SP]-[SP]y'[SP]or[SP]q[SP]|[SP]x'[SP]+[SP]y'.",
+   "encoded_tokens": 328
+  }
+ ]
+}

@@ -67,6 +67,35 @@ on timeout (analyze only).
 
 A finalized `draft_id` is required by `POST /api/assessments`.
 
+`/api/ai/analyze` → `data` (fields added 2026-11-17, all optional for clients; older
+fields unchanged):
+
+```json
+{
+  "value_constraints": [{"text": "1 <= N <= 10^9", "status": "NEEDS_SEMANTIC_REVIEW",
+                         "unsupported_numbers": [], "warnings": []}],
+  "code_constraints": [{"type": "recursion_required", "evidence": "...", "status": "NEEDS_TEACHER_REVIEW"}],
+  "teacher_approval_required": true,
+  "warnings": [],
+  "model": {"status": "GENERATED", "suggestion_used": true, "input_tokens": 153,
+            "input_token_limit": 512, "generated_tokens": 61, "max_new_tokens": 384,
+            "output_complete": true}
+}
+```
+
+* Value-constraint `status`: `NEEDS_TEACHER_REVIEW` (explicit bound found in the statement),
+  `NEEDS_SEMANTIC_REVIEW` (model text, all numbers appear in the statement, no warnings),
+  `UNVERIFIED_SUGGESTION` (unsupported numbers or any warning).
+* Item `warnings[].code`: `OUTPUT_TRUNCATED` (model hit the 384-token output limit),
+  `DECODE_INVALID_BYTES`, `DECODE_INCOMPLETE` (malformed placeholder markers).
+* Top-level `warnings[].code`: `INPUT_TOO_LONG` (`input_tokens` > 512). The model is **not run**
+  and nothing is truncated; `value_constraints` then contains only bounds stated explicitly in
+  the problem (possibly none), `model.status` = `NOT_RUN_INPUT_TOO_LONG`. Code constraints are
+  still extracted. The teacher adds value constraints manually (draft action `ADD`).
+* `POST /api/ai/drafts`: the draft carries the same information for display — `ai_warnings`
+  (top-level warnings) and `warnings` on AI value-constraint items. Review, approval and
+  finalisation rules are unchanged.
+
 ## Teacher — assessments (existing)
 
 | Method | Path | Notes |

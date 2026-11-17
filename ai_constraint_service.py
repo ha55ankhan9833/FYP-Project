@@ -2,10 +2,17 @@ from numeric_constraint_validator import extract_explicit_bounds
 
 import os
 import re
-import torch
 
 from functools import lru_cache
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
+from constraint_codec import (
+    INPUT_TOKEN_LIMIT,
+    MAX_NEW_TOKENS,
+    decode_model_output,
+    input_length_warning,
+    output_truncated_warning,
+    unsupported_numbers,
+)
 
 BASE_PATH = os.environ.get(
     "FYP_MODEL_BASE_PATH",
@@ -16,6 +23,10 @@ MODEL_PATH = os.path.join(
     BASE_PATH,
     "flan_t5_constraint_final"
 )
+
+# Generation settings validated in the training notebook (cell 93):
+# beam search with 4 beams, early stopping, greedy (no sampling).
+NUM_BEAMS = 4
 
 CODE_PATTERNS = {
     "recursion_required": [
@@ -51,8 +62,13 @@ CODE_PATTERNS = {
     ]
 }
 
+
 @lru_cache(maxsize=1)
 def load_model():
+    # Imported lazily so the pure logic of this module (prompting, decoding,
+    # validation) can be tested without torch / transformers installed.
+    import torch
+    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -72,20 +88,13 @@ def load_model():
 
 
 def clean_constraint_text(raw_text):
-
-    text = str(raw_text)
-
-    replacements = {
-        "[SP]": " ",
-        "[B3C]": "<",
-        "[B3E]": ">",
-        "[B3A]": "&"
-    }
-
-    for old, new in replacements.items():
-        text = text.replace(old, new)
-
-    return re.sub(r"\s+", " ", text).strip()
+    """
+    Decode the model's placeholder encoding ([SP], [NL], [BXX], ...) with the
+    authoritative mapping from the training notebook (constraint_codec).
+    Kept for backward compatibility; returns the decoded text only.
+    """
+    text, _warnings = decode_model_output(str(raw_text))
+    return text
 
 
 def extract_code_constraints(statement):
@@ -128,6 +137,28 @@ def extract_code_constraints(statement):
     return results
 
 
+def build_prompt(problem, input_format, output_format):
+    # Identical to the training prompt (notebook cell 84).
+    return (
+        "Generate value constraints for the following C++ "
+        "programming problem.\n"
+        f"Problem: {problem}\n"
+        f"Input Format: {input_format}\n"
+        f"Output Format: {output_format}"
+    )
+
+
+def _generated_token_count(sequence, eos_token_id):
+    """
+    sequence = decoder output ids, starting with the decoder start token.
+    Returns (tokens generated incl. </s>, finished_with_eos).
+    """
+    generated = list(sequence[1:])
+    if eos_token_id in generated:
+        return generated.index(eos_token_id) + 1, True
+    return len(generated), False
+
+
 def generate_value_constraints(
     problem,
     input_format,
@@ -136,35 +167,55 @@ def generate_value_constraints(
 
     tokenizer, model, device = load_model()
 
-    prompt = (
-        "Generate value constraints for the following C++ "
-        "programming problem.\n"
-        f"Problem: {problem}\n"
-        f"Input Format: {input_format}\n"
-        f"Output Format: {output_format}"
-    )
+    prompt = build_prompt(problem, input_format, output_format)
+
+    # D4: measure the full prompt (incl. </s>) before inference and refuse,
+    # rather than silently truncating, anything the model cannot read whole.
+    input_tokens = len(tokenizer(prompt, truncation=False)["input_ids"])
+    too_long = input_length_warning(input_tokens)
+
+    if too_long:
+        return {
+            "text": "",
+            "status": "NOT_GENERATED",
+            "unsupported_numbers": [],
+            "warnings": [too_long],
+            "input_tokens": input_tokens,
+            "generated_tokens": 0,
+            "output_complete": False
+        }
+
+    import torch
 
     inputs = tokenizer(
         prompt,
-        return_tensors="pt",
-        truncation=True,
-        max_length=512
+        return_tensors="pt"
     ).to(device)
 
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=128,
-            num_beams=4,
+            max_new_tokens=MAX_NEW_TOKENS,      # D2
+            num_beams=NUM_BEAMS,
+            early_stopping=True,
             do_sample=False
         )
 
+    sequence = outputs[0].tolist()
+    generated_tokens, finished = _generated_token_count(
+        sequence, tokenizer.eos_token_id)
+
     raw = tokenizer.decode(
-        outputs[0],
-        skip_special_tokens=True
+        sequence,
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False
     )
 
-    cleaned = clean_constraint_text(raw)
+    # D1: full placeholder decoding before anything else looks at the text.
+    cleaned, warnings = decode_model_output(raw)
+
+    if not finished:
+        warnings.append(output_truncated_warning(generated_tokens))
 
     source = " ".join([
         problem,
@@ -172,21 +223,21 @@ def generate_value_constraints(
         output_format
     ])
 
-    source_numbers = set(re.findall(r"\d+", source))
-    predicted_numbers = set(re.findall(r"\d+", cleaned))
-
-    unsupported = sorted(
-        predicted_numbers - source_numbers
-    )
+    # D3: numeric support is checked on the DECODED text only.
+    unsupported = unsupported_numbers(cleaned, source)
 
     return {
         "text": cleaned,
         "status": (
             "UNVERIFIED_SUGGESTION"
-            if unsupported
+            if unsupported or warnings
             else "NEEDS_SEMANTIC_REVIEW"
         ),
-        "unsupported_numbers": unsupported
+        "unsupported_numbers": unsupported,
+        "warnings": warnings,
+        "input_tokens": input_tokens,
+        "generated_tokens": generated_tokens,
+        "output_complete": finished
     }
 
 
@@ -209,14 +260,35 @@ def analyze_cpp_problem(
     ])
 
     explicit_bounds = extract_explicit_bounds(source)
+    model_ran = value_result["status"] != "NOT_GENERATED"
 
     if explicit_bounds:
         value_constraints = explicit_bounds
+    elif model_ran:
+        value_constraints = [{
+            "text": value_result["text"],
+            "status": value_result["status"],
+            "unsupported_numbers": value_result["unsupported_numbers"],
+            "warnings": value_result["warnings"]
+        }]
     else:
-        value_constraints = [value_result]
+        # Never present an empty or truncated-input guess as a suggestion.
+        value_constraints = []
+
+    warnings = [] if model_ran else list(value_result["warnings"])
 
     return {
         "value_constraints": value_constraints,
         "code_constraints": extract_code_constraints(source),
-        "teacher_approval_required": True
+        "teacher_approval_required": True,
+        "warnings": warnings,
+        "model": {
+            "status": "GENERATED" if model_ran else "NOT_RUN_INPUT_TOO_LONG",
+            "suggestion_used": bool(model_ran and not explicit_bounds),
+            "input_tokens": value_result["input_tokens"],
+            "input_token_limit": INPUT_TOKEN_LIMIT,
+            "generated_tokens": value_result["generated_tokens"],
+            "max_new_tokens": MAX_NEW_TOKENS,
+            "output_complete": value_result["output_complete"]
+        }
     }
