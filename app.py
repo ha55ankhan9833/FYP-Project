@@ -38,6 +38,10 @@ app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=2)
 
 jwt = JWTManager(app)
 
+# Uniform JSON errors: {"status": "error", "message": ..., "code": ...}
+from api_errors import register_error_handlers
+register_error_handlers(app, jwt)
+
 # Teacher Approval API
 from teacher_approval_routes import approval_bp
 app.register_blueprint(approval_bp)

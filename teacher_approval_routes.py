@@ -2,6 +2,7 @@ import requests
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt, get_jwt_identity
 
+from api_errors import error_response
 from teacher_approval_service import (
     create_draft,
     apply_action,
@@ -13,6 +14,7 @@ from constraint_draft_db import save_draft, get_draft, get_draft_with_version, u
 approval_bp = Blueprint("approval", __name__)
 
 AI_URL = "http://127.0.0.1:5001/analyze"
+CONFLICT_MESSAGE = "Draft changed, finalized, or access denied"
 
 
 def teacher_id_or_error():
@@ -21,24 +23,34 @@ def teacher_id_or_error():
     return str(get_jwt_identity())
 
 
+def _teacher_required():
+    return error_response("Teacher access required", 403)
+
+
+def _draft_error(exc):
+    if str(exc) == CONFLICT_MESSAGE:
+        return error_response(str(exc), 409)
+    return error_response(str(exc), 400)
+
+
 @approval_bp.post("/api/ai/drafts")
 @jwt_required()
 def new_draft():
     teacher_id = teacher_id_or_error()
     if teacher_id is None:
-        return jsonify({"error": "Teacher access required"}), 403
+        return _teacher_required()
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
-        return jsonify({"error": "Valid JSON required"}), 400
+        return error_response("Valid JSON required", 400)
 
     fields = ("problem", "input_format", "output_format")
     if any(not isinstance(data.get(f), str) for f in fields):
-        return jsonify({"error": "All fields must be strings"}), 400
+        return error_response("All fields must be strings", 400)
     if not data["problem"].strip():
-        return jsonify({"error": "Problem is required"}), 400
+        return error_response("Problem is required", 400)
     if any(len(data[f]) > 10000 for f in fields):
-        return jsonify({"error": "Input too long"}), 400
+        return error_response("Input too long", 400)
 
     try:
         response = requests.post(
@@ -52,9 +64,9 @@ def new_draft():
         save_draft(teacher_id, draft)
         return jsonify({"status": "success", "draft": draft}), 201
     except requests.RequestException:
-        return jsonify({"error": "AI service unavailable"}), 502
+        return error_response("AI service unavailable", 502)
     except (ValueError, KeyError, TypeError):
-        return jsonify({"error": "Invalid AI response"}), 502
+        return error_response("Invalid AI response", 502)
 
 
 @approval_bp.get("/api/ai/drafts/<draft_id>")
@@ -62,13 +74,13 @@ def new_draft():
 def read_draft(draft_id):
     teacher_id = teacher_id_or_error()
     if teacher_id is None:
-        return jsonify({"error": "Teacher access required"}), 403
+        return _teacher_required()
 
     draft = get_draft(draft_id, teacher_id)
     if draft is None:
-        return jsonify({"error": "Draft not found"}), 404
+        return error_response("Draft not found", 404)
 
-    return jsonify({"draft": draft}), 200
+    return jsonify({"status": "success", "draft": draft}), 200
 
 
 @approval_bp.post("/api/ai/drafts/<draft_id>/actions")
@@ -76,15 +88,15 @@ def read_draft(draft_id):
 def draft_action(draft_id):
     teacher_id = teacher_id_or_error()
     if teacher_id is None:
-        return jsonify({"error": "Teacher access required"}), 403
+        return _teacher_required()
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
-        return jsonify({"error": "Valid JSON required"}), 400
+        return error_response("Valid JSON required", 400)
 
     draft, version = get_draft_with_version(draft_id, teacher_id)
     if draft is None:
-        return jsonify({"error": "Draft not found"}), 404
+        return error_response("Draft not found", 404)
 
     try:
         updated = apply_action(
@@ -95,11 +107,9 @@ def draft_action(draft_id):
             data.get("text")
         )
         update_draft(teacher_id, updated, version)
-        return jsonify({"draft": updated}), 200
+        return jsonify({"status": "success", "draft": updated}), 200
     except (ValueError, AttributeError) as exc:
-        if str(exc) == "Draft changed, finalized, or access denied":
-            return jsonify({"error": str(exc)}), 409
-        return jsonify({"error": str(exc)}), 400
+        return _draft_error(exc)
 
 
 @approval_bp.post("/api/ai/drafts/<draft_id>/approve")
@@ -107,24 +117,22 @@ def draft_action(draft_id):
 def draft_approve(draft_id):
     teacher_id = teacher_id_or_error()
     if teacher_id is None:
-        return jsonify({"error": "Teacher access required"}), 403
+        return _teacher_required()
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
-        return jsonify({"error": "Valid JSON required"}), 400
+        return error_response("Valid JSON required", 400)
 
     draft, version = get_draft_with_version(draft_id, teacher_id)
     if draft is None:
-        return jsonify({"error": "Draft not found"}), 404
+        return error_response("Draft not found", 404)
 
     try:
         updated = approve_category(draft, data.get("category"))
         update_draft(teacher_id, updated, version)
-        return jsonify({"draft": updated}), 200
+        return jsonify({"status": "success", "draft": updated}), 200
     except ValueError as exc:
-        if str(exc) == "Draft changed, finalized, or access denied":
-            return jsonify({"error": str(exc)}), 409
-        return jsonify({"error": str(exc)}), 400
+        return _draft_error(exc)
 
 
 @approval_bp.post("/api/ai/drafts/<draft_id>/finalize")
@@ -132,11 +140,11 @@ def draft_approve(draft_id):
 def draft_finalize(draft_id):
     teacher_id = teacher_id_or_error()
     if teacher_id is None:
-        return jsonify({"error": "Teacher access required"}), 403
+        return _teacher_required()
 
     draft, version = get_draft_with_version(draft_id, teacher_id)
     if draft is None:
-        return jsonify({"error": "Draft not found"}), 404
+        return error_response("Draft not found", 404)
 
     try:
         result = finalize_draft(draft)
@@ -147,6 +155,4 @@ def draft_finalize(draft_id):
             "approved_constraints": result["approved_constraints"]
         }), 200
     except ValueError as exc:
-        if str(exc) == "Draft changed, finalized, or access denied":
-            return jsonify({"error": str(exc)}), 409
-        return jsonify({"error": str(exc)}), 400
+        return _draft_error(exc)

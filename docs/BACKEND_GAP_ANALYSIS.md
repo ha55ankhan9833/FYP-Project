@@ -112,13 +112,13 @@ until a manual-grade path exists.
 
 ## 4. Checklist before frontend development starts
 
-1. [ ] **G5** Initialize git (your authorization), with the `.gitignore` above.
-2. [ ] **G6** Write `requirements.txt` and `requirements-ai.txt` from the installed versions.
-3. [ ] **G1** Choose CORS handling: a frontend dev proxy (recommended, no install) or `flask-cors` (install approval).
-4. [ ] **G2** Decide and implement the manual-grade path for PENDING submissions while execution is disabled.
-5. [ ] **G3** Normalize the AI draft routes' error format.
-6. [ ] **G7** Decide M3, or confirm the frontend must handle `criterion_approval_available = false`.
-7. [ ] **G4** Bring `docs/API_CONTRACT.md` fully up to date. It is the frontend's source of truth.
+1. [x] **G5** Git initialized locally; initial commit `3f55536` (166 reviewed files, no remote).
+2. [x] **G6** `requirements.txt`, `requirements-lock.txt` and `requirements-ai.txt` written; `docs/SETUP_AND_SERVICES.md` added.
+3. [x] **G1 (development)** Dev-server proxy documented in `docs/FRONTEND_INTEGRATION.md`; no package needed. Cross-origin production still needs `flask-cors` (install approval) or a same-origin reverse proxy.
+4. [ ] **G2** Decide and implement the manual-grade path for PENDING submissions while execution is disabled. **Needs your policy decision.**
+5. [x] **G3** Uniform JSON errors (`api_errors.py`): AI draft routes, JWT failures and 404/405/500. Status codes unchanged; covered by `tests/test_api_errors.py`.
+6. [ ] **G7** Decide M3, or confirm the frontend must handle `criterion_approval_available = false`. **Needs your approval.**
+7. [x] **G4** `docs/API_CONTRACT.md` updated: error contract, AI routes, teacher evaluation fields, finalize `criteria`, status fields.
 8. [ ] Agree which database the frontend develops against (recommended: FYP_E2E_Test through `run_e2e_backend.py`).
 
 P1 items (G8–G13) can proceed in parallel with early frontend work. P2 items
