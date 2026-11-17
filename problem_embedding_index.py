@@ -23,7 +23,11 @@ from pathlib import Path
 
 INDEX_FORMAT = "fyp-problem-index-v1"
 INDEX_SPLIT = "train"
-EMBEDDING_DIM = 384
+EMBEDDING_DIM = 384                      # bge-small-en-v1.5
+# Dense index kinds and their vector sizes: bge (384) and the mean-pooled
+# encoder of the fine-tuned FLAN-T5-small constraint model (d_model 512).
+ALLOWED_DIMENSIONS = frozenset({384, 512})
+INDEX_KINDS = frozenset({"dense", "tfidf"})
 ALLOWED_METADATA_FIELDS = frozenset({"problem_id", "input_format", "value_constraints"})
 # Present in the original dataset but must never be exposed by retrieval.
 FORBIDDEN_FIELDS = frozenset({
@@ -59,7 +63,10 @@ def validate_manifest(manifest, metadata, split_of=None):
         raise IndexIntegrityError("Unknown index format")
     if manifest.get("split") != INDEX_SPLIT:
         raise IndexIntegrityError("Index must be built from the training split only")
-    if manifest.get("dimensions") != EMBEDDING_DIM:
+    kind = manifest.get("kind", "dense")
+    if kind not in INDEX_KINDS:
+        raise IndexIntegrityError("Unknown index kind")
+    if kind == "dense" and manifest.get("dimensions") not in ALLOWED_DIMENSIONS:
         raise IndexIntegrityError("Unexpected embedding dimension")
     if not isinstance(metadata, list) or len(metadata) != manifest.get("count"):
         raise IndexIntegrityError("Metadata row count does not match the manifest")
@@ -99,6 +106,22 @@ class ProblemIndex:
 
     def __len__(self):
         return len(self.problem_ids)
+
+    def rank(self, query_vector, n):
+        """Raw cosine ranking (no folding): [(problem_id, score)] for the top n."""
+        import numpy as np
+
+        if type(n) is not int or n < 1:
+            raise ValueError("n must be a positive integer")
+        query = np.asarray(query_vector, dtype=np.float32).reshape(-1)
+        if query.shape[0] != self.vectors.shape[1]:
+            raise ValueError("Query vector has the wrong dimension")
+        norm = float(np.linalg.norm(query))
+        if not norm > 0:
+            raise ValueError("Query vector is zero")
+        scores = self.vectors @ (query / norm)
+        order = np.argsort(-scores, kind="stable")[:n]
+        return [(self.problem_ids[int(i)], float(scores[int(i)])) for i in order]
 
     def search(self, query_vector, k=DEFAULT_K, exclude_ids=(), min_score=None,
                collapse_threshold=NEAR_DUPLICATE_COSINE):
@@ -173,8 +196,10 @@ def load_index(directory, split_of=None):
     if sha256_bytes(raw) != manifest.get("vectors_sha256"):
         raise IndexIntegrityError("vectors.npy does not match the manifest hash")
 
+    if manifest.get("kind", "dense") != "dense":
+        raise IndexIntegrityError("Not a dense vector index")
     vectors = np.load(directory / "vectors.npy", allow_pickle=False)
-    if vectors.dtype != np.float32 or vectors.shape != (len(metadata), EMBEDDING_DIM):
+    if vectors.dtype != np.float32 or vectors.shape != (len(metadata), manifest["dimensions"]):
         raise IndexIntegrityError("vectors.npy has an unexpected shape or dtype")
     norms = np.linalg.norm(vectors, axis=1)
     if not np.all(np.abs(norms - 1.0) <= NORM_TOLERANCE):

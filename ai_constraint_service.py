@@ -28,6 +28,21 @@ MODEL_PATH = os.path.join(
 # beam search with 4 beams, early stopping, greedy (no sampling).
 NUM_BEAMS = 4
 
+# RAG feature flag (docs/AI_RAG_CONSTRAINT_PLAN.md). Server-side only; OFF until
+# a measured validation result justifies enabling it. "off" keeps the original
+# prompt byte-for-byte. Other values: "bge", "flan", "tfidf", "hybrid".
+RAG_MODE = "off"
+RAG_K_MAX = 3
+RAG_EXAMPLE_FORMAT = "encoded"
+
+
+def _retrieval_unavailable(detail):
+    return {
+        "code": "RETRIEVAL_UNAVAILABLE",
+        "message": ("Similar-problem retrieval failed; the suggestion was generated "
+                    "without retrieved examples (baseline prompt). " + detail)[:500],
+    }
+
 CODE_PATTERNS = {
     "recursion_required": [
         r"\brecursiv(?:e|ely)\b",
@@ -162,16 +177,25 @@ def _generated_token_count(sequence, eos_token_id):
 def generate_value_constraints(
     problem,
     input_format,
-    output_format
+    output_format,
+    context_provider=None
 ):
+    """
+    context_provider=None -> the original prompt, unchanged (RAG off).
+    context_provider(problem, input_format, output_format, count_tokens) ->
+    rag_context selection; used only by the RAG flag or the offline evaluation.
+    """
 
     tokenizer, model, device = load_model()
 
     prompt = build_prompt(problem, input_format, output_format)
 
+    def count_tokens(text):
+        return len(tokenizer(text, truncation=False)["input_ids"])
+
     # D4: measure the full prompt (incl. </s>) before inference and refuse,
     # rather than silently truncating, anything the model cannot read whole.
-    input_tokens = len(tokenizer(prompt, truncation=False)["input_ids"])
+    input_tokens = count_tokens(prompt)
     too_long = input_length_warning(input_tokens)
 
     if too_long:
@@ -184,6 +208,36 @@ def generate_value_constraints(
             "generated_tokens": 0,
             "output_complete": False
         }
+
+    retrieval = None
+    retrieval_warnings = []
+
+    if context_provider is not None:
+        try:
+            selection = context_provider(problem, input_format, output_format,
+                                         count_tokens)
+            if selection["prompt_tokens"] > INPUT_TOKEN_LIMIT:
+                raise ValueError("context selection exceeded the token limit")
+            prompt = selection["prompt"]
+            input_tokens = selection["prompt_tokens"]
+            retrieval = {
+                "status": "USED" if selection["k_used"] else "NO_EXAMPLE_FITS",
+                "method": selection.get("method"),
+                "k_used": selection["k_used"],
+                "context_tokens": selection["context_tokens"],
+                "skipped_for_budget": selection["skipped_for_budget"],
+                "skipped_duplicates": selection["skipped_duplicates"],
+                "retrieval_ms": selection.get("retrieval_ms"),
+                "examples": selection["examples"],
+                "example_constraints": selection["example_constraints"],
+            }
+        except Exception as error:        # never fail the request because of RAG
+            retrieval = {"status": "FAILED", "method": None, "k_used": 0}
+            retrieval_warnings.append(_retrieval_unavailable(type(error).__name__))
+
+    # Defence in depth: nothing longer than the limit ever reaches the model.
+    if input_tokens > INPUT_TOKEN_LIMIT:
+        raise RuntimeError("Prompt exceeds the model input limit")
 
     import torch
 
@@ -226,7 +280,7 @@ def generate_value_constraints(
     # D3: numeric support is checked on the DECODED text only.
     unsupported = unsupported_numbers(cleaned, source)
 
-    return {
+    result = {
         "text": cleaned,
         "status": (
             "UNVERIFIED_SUGGESTION"
@@ -240,6 +294,25 @@ def generate_value_constraints(
         "output_complete": finished
     }
 
+    # Keys only exist when retrieval was attempted, so the RAG-off result is
+    # exactly the pre-RAG result.
+    if retrieval is not None:
+        result["retrieval"] = retrieval
+        result["retrieval_warnings"] = retrieval_warnings
+
+    return result
+
+
+def _rag_provider():
+    """Live provider for RAG_MODE, or (None, warning) if it cannot be built."""
+    if RAG_MODE == "off":
+        return None, None
+    try:
+        import rag_retrievers
+        return rag_retrievers.live_provider(RAG_MODE, RAG_K_MAX, RAG_EXAMPLE_FORMAT), None
+    except Exception as error:
+        return None, _retrieval_unavailable(type(error).__name__)
+
 
 def analyze_cpp_problem(
     problem,
@@ -247,11 +320,21 @@ def analyze_cpp_problem(
     output_format
 ):
 
-    value_result = generate_value_constraints(
-        problem,
-        input_format,
-        output_format
-    )
+    provider, provider_warning = _rag_provider()
+
+    if provider is None:
+        value_result = generate_value_constraints(
+            problem,
+            input_format,
+            output_format
+        )
+    else:
+        value_result = generate_value_constraints(
+            problem,
+            input_format,
+            output_format,
+            context_provider=provider
+        )
 
     source = "\n".join([
         problem,
@@ -277,18 +360,31 @@ def analyze_cpp_problem(
 
     warnings = [] if model_ran else list(value_result["warnings"])
 
+    model_info = {
+        "status": "GENERATED" if model_ran else "NOT_RUN_INPUT_TOO_LONG",
+        "suggestion_used": bool(model_ran and not explicit_bounds),
+        "input_tokens": value_result["input_tokens"],
+        "input_token_limit": INPUT_TOKEN_LIMIT,
+        "generated_tokens": value_result["generated_tokens"],
+        "max_new_tokens": MAX_NEW_TOKENS,
+        "output_complete": value_result["output_complete"]
+    }
+
+    # RAG fields appear only when RAG_MODE != "off" (response unchanged otherwise).
+    if RAG_MODE != "off":
+        retrieval = dict(value_result.get("retrieval") or
+                         {"status": "FAILED" if provider_warning else "NOT_ATTEMPTED",
+                          "method": None, "k_used": 0})
+        retrieval.pop("example_constraints", None)   # IDs and scores are enough for display
+        model_info["retrieval"] = retrieval
+        if provider_warning:
+            warnings.append(provider_warning)
+        warnings.extend(value_result.get("retrieval_warnings", []))
+
     return {
         "value_constraints": value_constraints,
         "code_constraints": extract_code_constraints(source),
         "teacher_approval_required": True,
         "warnings": warnings,
-        "model": {
-            "status": "GENERATED" if model_ran else "NOT_RUN_INPUT_TOO_LONG",
-            "suggestion_used": bool(model_ran and not explicit_bounds),
-            "input_tokens": value_result["input_tokens"],
-            "input_token_limit": INPUT_TOKEN_LIMIT,
-            "generated_tokens": value_result["generated_tokens"],
-            "max_new_tokens": MAX_NEW_TOKENS,
-            "output_complete": value_result["output_complete"]
-        }
+        "model": model_info
     }

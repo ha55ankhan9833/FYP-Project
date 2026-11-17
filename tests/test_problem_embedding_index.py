@@ -89,7 +89,8 @@ class ManifestAndLeakageTests(unittest.TestCase):
     def test_count_dimension_duplicate_and_id_digest_checks(self):
         bad = [
             (make_manifest(GOOD_META, count=3), GOOD_META),
-            (make_manifest(GOOD_META, dimensions=512), GOOD_META),
+            (make_manifest(GOOD_META, dimensions=100), GOOD_META),
+            (make_manifest(GOOD_META, kind="graph"), GOOD_META),
             (make_manifest(GOOD_META, format="other"), GOOD_META),
             (make_manifest(GOOD_META, problem_ids_sha256="0" * 64), GOOD_META),
             (make_manifest(GOOD_META + GOOD_META[:1]), GOOD_META + GOOD_META[:1]),

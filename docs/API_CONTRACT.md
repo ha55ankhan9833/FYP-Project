@@ -92,6 +92,11 @@ fields unchanged):
   and nothing is truncated; `value_constraints` then contains only bounds stated explicitly in
   the problem (possibly none), `model.status` = `NOT_RUN_INPUT_TOO_LONG`. Code constraints are
   still extracted. The teacher adds value constraints manually (draft action `ADD`).
+* RAG (retrieved similar training problems) is **off** (`ai_constraint_service.RAG_MODE = "off"`):
+  the response above is unchanged. If it is ever enabled server-side, `model.retrieval`
+  (`status`, `method`, `k_used`, `context_tokens`, `skipped_for_budget`, `examples[{problem_id, score}]`)
+  is added, and a retrieval failure adds top-level warning `RETRIEVAL_UNAVAILABLE` (the
+  suggestion is then generated without examples). See `docs/AI_RAG_PHASE1_IMPLEMENTATION.md`.
 * `POST /api/ai/drafts`: the draft carries the same information for display — `ai_warnings`
   (top-level warnings) and `warnings` on AI value-constraint items. Review, approval and
   finalisation rules are unchanged.
