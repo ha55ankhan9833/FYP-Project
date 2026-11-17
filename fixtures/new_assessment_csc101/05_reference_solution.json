@@ -1,0 +1,8 @@
+{
+  "method": "POST",
+  "path": "/api/assessments/<new_id>/reference-solution",
+  "body": {
+    "source_code": "#include <iostream>\n\nint main() {\n    long long n;\n    if (!(std::cin >> n)) {\n        return 0;\n    }\n\n    bool prime = n >= 2;\n    for (long long d = 2; prime && d * d <= n; ++d) {\n        if (n % d == 0) {\n            prime = false;\n        }\n    }\n\n    std::cout << (prime ? \"YES\" : \"NO\") << '\\n';\n    return 0;\n}\n"
+  },
+  "notes": "Saved as PENDING; nothing is compiled or executed."
+}

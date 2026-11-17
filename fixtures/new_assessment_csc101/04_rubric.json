@@ -1,0 +1,18 @@
+{
+  "method": "PUT",
+  "path": "/api/assessments/<new_id>/rubric",
+  "body": {
+    "criteria": [
+      {
+        "criterion_name": "Logic & Algorithm",
+        "max_marks": 3,
+        "description": "Correct primality logic including N = 1 and N = 2; efficient divisor search (e.g. up to sqrt(N)); no incorrect early exits."
+      },
+      {
+        "criterion_name": "Code Quality",
+        "max_marks": 2,
+        "description": "Readable structure and naming, appropriate types (no overflow), no unnecessary code, follows the required output format exactly."
+      }
+    ]
+  }
+}

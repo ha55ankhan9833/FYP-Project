@@ -1,0 +1,87 @@
+# ======================================================================
+# Auto Test Case Generator backend - files that must never be committed
+# ======================================================================
+
+# --- Secrets and credentials -----------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+# Login tokens written by fixtures/*_login.py for the E2E driver.
+dev_tools/.tokens/
+*.token
+
+# --- Python environments and caches ----------------------------------
+.venv/
+.venv_ai/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Local AI models (296 MB FLAN-T5; restore separately) ------------
+models/
+*.safetensors
+*.bin
+*.pt
+*.onnx
+
+# --- C++ build outputs and temporary build folders --------------------
+*.exe
+*.o
+*.obj
+*.out
+*.ilk
+*.pdb
+build/
+fyp_cpp_build_*/
+fyp_*_build_*/
+
+# --- Generated reports (contain hidden test inputs / outputs) ---------
+dev_tools/reports/
+reports/
+
+# --- Database exports, backups and dumps ------------------------------
+*.bak
+*.bacpac
+*.dacpac
+*.mdf
+*.ldf
+*.ndf
+*.trn
+*.sqlite
+*.db
+exports/
+*.csv
+*.xlsx
+
+# --- Local backups, legacy variants and temporary files ---------------
+_backups/
+*.orig
+*.tmp
+*.swp
+*~
+# Superseded module versions kept on disk only (not imported anywhere).
+*_backup.py
+*_backup_*.py
+*_backup_v[0-9]*.py
+app_backup_before_ai.py
+ollama_grading_v[0-9]*.py
+
+# --- Editors and OS ---------------------------------------------------
+.vscode/
+.idea/
+*.code-workspace
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# --- Claude Code local state ------------------------------------------
+.claude/

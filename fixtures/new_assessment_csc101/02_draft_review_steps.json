@@ -1,0 +1,63 @@
+{
+  "notes": "Replace <draft_id>/<id> with values from step 01. Send each body in order.",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/api/ai/drafts/<draft_id>/actions",
+      "body": {
+        "action": "DELETE",
+        "category": "value",
+        "constraint_id": "<id>"
+      },
+      "notes": "Repeat for EVERY AI value suggestion (even if it looks right) so only the teacher-added rule remains."
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/drafts/<draft_id>/actions",
+      "body": {
+        "action": "ADD",
+        "category": "value",
+        "text": "1 <= N <= 1000000"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/drafts/<draft_id>/actions",
+      "body": {
+        "action": "DELETE",
+        "category": "code",
+        "constraint_id": "<id>"
+      },
+      "notes": "Repeat for EVERY AI code suggestion, if any."
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/drafts/<draft_id>/approve",
+      "body": {
+        "category": "value"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/drafts/<draft_id>/approve",
+      "body": {
+        "category": "code"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/drafts/<draft_id>/finalize",
+      "body": {}
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai/drafts/<draft_id>",
+      "body": null,
+      "notes": "Verify: finalized=true, approval value/code true, exactly one ACCEPTED constraint with text '1 <= N <= 1000000', everything else REJECTED."
+    }
+  ],
+  "result_required": {
+    "value_constraints": "1 <= N <= 1000000",
+    "code_constraints": ""
+  }
+}

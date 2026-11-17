@@ -1,0 +1,4 @@
+{
+  "_purpose": "Owner approvals for dev_tools/trusted_execution_harness.py. An entry authorizes compiling and running ONE named developer fixture whose file has EXACTLY this SHA-256. Empty = nothing may be compiled or executed. Student code is never eligible.",
+  "approved": []
+}

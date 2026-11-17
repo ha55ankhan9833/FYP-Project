@@ -1,0 +1,10 @@
+{
+  "_purpose": "SHA-256 hashes of reference solutions that the project owner has explicitly approved to run on the HOST to produce expected outputs. Only needed while no secure sandbox exists. A hash authorizes exactly those source bytes and nothing else. Student code is never eligible. Add an entry ONLY after the owner approves that exact source and host execution.",
+  "references": [
+    {
+      "sha256": "53b7d425901f831aae4dae9bfaeab839de9ec51415f319ce4943f43b07893993",
+      "description": "Factorial reference (Assessment 4), reviewed before 2026-11-17 and already hard-coded as the built-in allowlist entry",
+      "reviewed_on": "2026-11-12"
+    }
+  ]
+}
