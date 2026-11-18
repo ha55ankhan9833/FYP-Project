@@ -143,6 +143,14 @@ def suggest_for_assessment(assessment_id):
             WHERE assessment_id = ? AND teacher_id = ?
         """, assessment_id, teacher_id)
         row = cursor.fetchone()
+        drafts = []
+        if row is not None:
+            cursor.execute("""
+                SELECT draft_json, is_finalized
+                FROM dbo.ConstraintReviewDraft
+                WHERE assessment_id = ?
+            """, assessment_id)
+            drafts = cursor.fetchall()
     except Exception:
         current_app.logger.exception("Test input suggestion: assessment lookup failed")
         return error_response("Unable to load assessment", 500, "INTERNAL_ERROR")
@@ -152,10 +160,19 @@ def suggest_for_assessment(assessment_id):
     if row is None:
         return error_response("Assessment not found", 404, "NOT_FOUND")
 
+    from test_case_approval_validator import approved_input_schema_from_row
+    approved = None
+    if len(drafts) == 1:
+        try:
+            approved = approved_input_schema_from_row(drafts[0][0], bool(drafts[0][1]))
+        except ValueError as exc:
+            return error_response(str(exc), 409, "INVALID_APPROVED_INPUT_SCHEMA")
+
     problem = {"problem_statement": row[0], "input_format": row[1], "output_format": row[2],
                "value_constraints": row[3], "sample_input": sample}
     options = {k: v for k, v in _options(body).items()}
-    return _run(problem, options, assessment_context={"assessment_id": assessment_id})
+    return _run(problem, options, assessment_context={"assessment_id": assessment_id,
+                                                      "approved_input_schema": approved})
 
 
 @test_input_bp.route("/api/test-inputs/validate", methods=["POST"])

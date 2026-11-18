@@ -120,5 +120,49 @@ def validate_assessment_approval(cursor, assessment_id):
         "valid": True,
         "assessment_id": assessment_id,
         "approved_value_constraints": expected_value,
-        "approved_code_constraints": expected_code
+        "approved_code_constraints": expected_code,
+        # None for every draft without a structured schema (legacy format).
+        "approved_input_schema": approved_input_schema(draft)
     }
+
+
+def approved_input_schema(draft):
+    """
+    The teacher-approved structured input schema of a FINALIZED draft, checked
+    (input_schema.check_schema), or None when the draft has none. A present
+    but invalid schema is an error, never silently ignored.
+    """
+
+    if not isinstance(draft, dict) or draft.get("finalized") is not True:
+        return None
+
+    raw = draft.get("input_schema")
+
+    if raw is None:
+        return None
+
+    from input_schema import SchemaError, check_schema
+
+    try:
+        schema = check_schema(raw)
+    except SchemaError as error:
+        raise ValueError(f"Approved input schema is invalid: {error}") from error
+
+    if schema["legacy"]:
+        raise ValueError("Approved input schema is invalid: legacy flag")
+
+    return schema
+
+
+def approved_input_schema_from_row(draft_json, is_finalized):
+    """Read-only helper for callers that load the draft row themselves."""
+
+    if not is_finalized:
+        return None
+
+    try:
+        draft = json.loads(draft_json)
+    except (TypeError, ValueError):
+        return None
+
+    return approved_input_schema(draft)

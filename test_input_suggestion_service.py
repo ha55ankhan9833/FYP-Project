@@ -40,10 +40,14 @@ class UnsupportedFormat(ValueError):
         self.reasons = reasons
 
 
-def resolve_schema(problem, input_schema=None):
-    """(checked_schema, source, shape). Raises SchemaError or UnsupportedFormat."""
+def resolve_schema(problem, input_schema=None, approved_schema=None):
+    """(checked_schema, source, shape). Raises SchemaError or UnsupportedFormat.
+    approved_schema: the CHECKED schema from the assessment's finalized
+    approval draft (reused so the teacher does not repeat it)."""
     if input_schema is not None:
         return check_schema(input_schema), "explicit", "explicit"
+    if approved_schema is not None:
+        return approved_schema, "approved_input_schema", "approved"
     constraints = problem.get("value_constraints")
     legacy_error = None
     if isinstance(constraints, str) and constraints.strip():
@@ -72,6 +76,8 @@ def _additional_inputs_plan(schema, source, candidates, assessment_context):
     if not assessment_context:
         plan["reason"] = "Only available for an existing assessment"
         return plan, set()
+    if source == "approved_input_schema":
+        return _structured_plan(schema, candidates, plan)
     if source != "legacy_constraints":
         plan["reason"] = ("Test generation currently accepts additional inputs only for the "
                           "1-3 integer format of the approved value constraints")
@@ -106,6 +112,26 @@ def _additional_inputs_plan(schema, source, candidates, assessment_context):
     return plan, set(usable)
 
 
+def _structured_plan(schema, candidates, plan):
+    """Exact-text additional_inputs for an assessment with an approved schema."""
+    from test_case_builder import MAX_STRUCTURED_INPUT_CHARS, select_structured_inputs
+
+    usable = [c["input"] for c in candidates if len(c["input"]) <= MAX_STRUCTURED_INPUT_CHARS]
+    suggested = usable[:REQUIRED_TEST_CASE_COUNT]
+    try:
+        select_structured_inputs(schema, suggested or None)   # the real rule (pure)
+    except ValueError as error:
+        plan.update({"slots": REQUIRED_TEST_CASE_COUNT,
+                     "reason": f"Test generation would refuse: {error}"})
+        return plan, set()
+    plan.update({"supported": True, "format": "exact_text",
+                 "slots": REQUIRED_TEST_CASE_COUNT, "structural_inputs": [],
+                 "suggested": suggested,
+                 "reason": ("Approved input schema: inputs are kept exactly (spaces and "
+                            "newlines); generated cases fill any remaining slots")})
+    return plan, {" ".join(t.split()) for t in suggested}
+
+
 def suggest(problem, input_schema=None, method="deterministic_baseline", count=DEFAULT_COUNT,
             seed=42, assessment_context=None):
     if method not in METHODS:
@@ -115,7 +141,8 @@ def suggest(problem, input_schema=None, method="deterministic_baseline", count=D
     if type(seed) is not int or not 0 <= seed <= 2 ** 31:
         raise ValueError("seed must be a non-negative integer")
 
-    schema, source, shape = resolve_schema(problem, input_schema)
+    approved = (assessment_context or {}).get("approved_input_schema")
+    schema, source, shape = resolve_schema(problem, input_schema, approved)
     sample = problem.get("sample_input") or None
 
     if method == "deterministic_baseline":
@@ -150,7 +177,8 @@ def suggest(problem, input_schema=None, method="deterministic_baseline", count=D
 
     plan, usable = _additional_inputs_plan(schema, source, candidates, assessment_context)
     for candidate in candidates:
-        candidate["usable_as_additional_input"] = " ".join(candidate["input"].split()) in usable
+        candidate["usable_as_additional_input"] = (
+            plan["supported"] and " ".join(candidate["input"].split()) in usable)
 
     return {
         "supported": True,

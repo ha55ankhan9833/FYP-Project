@@ -202,6 +202,29 @@ These endpoints are **teacher only**.
 
 **Validation results** report three layers separately: `syntax`, `constraints` and `semantic`. The semantic layer covers rules such as distinct or sorted arrays, graph rules and variable relations.
 
+### Structured test cases with an approved input schema (2026-11-18)
+
+**Where the schema lives.** The approved schema is stored inside the approval draft (`ConstraintReviewDraft.draft_json` → `input_schema`). No database migration is needed. Drafts without one keep the legacy 1–3 integer behaviour exactly.
+
+| Method | Path | Notes |
+|---|---|---|
+| PUT | `/api/ai/drafts/<draft_id>/input-schema` **NEW** | Body `{input_schema: object \| null}`. Teacher-owned drafts only; another teacher's draft → 404. Allowed only **before the value category is approved**, so approval and finalization lock it together with the value constraints. Responses: 400 `INVALID_INPUT_SCHEMA` · 422 `UNSUPPORTED_INPUT_FORMAT` · 409 draft changed/finalized. |
+| POST | `/api/assessments/<id>/generate-test-cases` | Unchanged for legacy assessments. With an approved schema, the structured behaviour below applies. |
+| POST | `/api/assessments/<id>/generate-test-cases/oracle` | A structured assessment → 400. The verified oracles cover the legacy integer form only. |
+| POST | `/api/assessments/<id>/test-inputs/suggestions` | Reuses the approved schema automatically (`schema_source: "approved_input_schema"`). `additional_inputs.format = "exact_text"`; `suggested` has been pre-checked with the real selection rule. |
+
+**`generate-test-cases` with an approved schema:**
+- `additional_inputs` are kept as **exact text**: spaces and newlines are preserved, and each input is at most 10,000 characters.
+- Each input is validated against the approved schema. Duplicates are exact text, where a final newline is optional.
+- Teacher inputs come first, then deterministic baseline cases fill the set to **exactly 10**.
+- The reference and grading receive the identical stored text.
+
+| Status | Code | Body / meaning |
+|---|---|---|
+| 400 | `INVALID_TEST_INPUT` | `errors: [{index, errors: [...]}]`. Nothing runs. |
+| 409 | `EXPECTED_OUTPUT_UNVERIFIABLE` | `finalization_status: "NOT_FINALIZED"`, `reason`, `ways_to_finalize`, `validated_inputs` (the exact 10 inputs). Returned when neither a verified sandbox nor an allow-listed reference is available. Nothing is executed or saved, and no expected outputs are produced. |
+| 201 | — | `input_format: "approved_input_schema"`. The locked save re-reads the approved schema and refuses if it changed. |
+
 ## Teacher — submissions & evaluation review (NEW)
 
 ### `GET /api/assessments/<id>/submissions`

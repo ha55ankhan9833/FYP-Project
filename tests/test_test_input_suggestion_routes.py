@@ -166,8 +166,9 @@ class AssessmentSuggestionTests(unittest.TestCase):
         self.assertEqual(len(cases), 10)
         usable = [c for c in data["candidates"] if c["usable_as_additional_input"]]
         self.assertTrue(usable)
-        # read-only: one SELECT, no writes, no commit
-        self.assertEqual(len(conn.executed), 1)
+        # read-only: assessment + approval-draft SELECTs only, no writes, no commit
+        self.assertEqual(len(conn.executed), 2)
+        self.assertTrue(all(sql.startswith("SELECT") for sql, _ in conn.executed))
         self.assertEqual(conn.commits, 0)
         self.assertTrue(conn.closed)
 

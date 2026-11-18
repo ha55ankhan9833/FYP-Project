@@ -134,7 +134,9 @@ def get_assessment_test_cases(assessment_id):
 @jwt_required()
 def generate_assessment_test_cases(assessment_id):
     from flask import request, current_app
+    from test_case_builder import StructuredInputError
     from test_case_generation_orchestrator import (
+        ExpectedOutputsUnavailable,
         generate_and_save_test_cases
     )
 
@@ -183,6 +185,35 @@ def generate_assessment_test_cases(assessment_id):
             "message": "Test cases generated successfully",
             "data": result
         }), 201
+
+    except ExpectedOutputsUnavailable as error:
+        # Structured inputs are valid but no approved mechanism can verify
+        # expected outputs. Nothing was executed or saved.
+        return jsonify({
+            "status": "error",
+            "code": "EXPECTED_OUTPUT_UNVERIFIABLE",
+            "message": ("Inputs are valid, but expected outputs cannot be verified yet; "
+                        "the test cases were not finalized or saved"),
+            "finalization_status": "NOT_FINALIZED",
+            "reason": error.reason,
+            "ways_to_finalize": [
+                "a verified secure sandbox (secure execution gate)",
+                "owner-approved trusted-reference allowlist entry for this reference hash"
+            ],
+            "validated_inputs": [
+                {"test_number": i, "test_name": item["test_name"],
+                 "category": item["category"], "input_data": item["input_data"]}
+                for i, item in enumerate(error.inputs, start=1)
+            ]
+        }), 409
+
+    except StructuredInputError as error:
+        return jsonify({
+            "status": "error",
+            "code": "INVALID_TEST_INPUT",
+            "message": str(error),
+            "errors": error.details
+        }), 400
 
     except ValueError as error:
         message = str(error)

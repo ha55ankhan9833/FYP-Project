@@ -155,6 +155,46 @@ def approve_category(draft, category):
     return updated
 
 
+MAX_INPUT_SCHEMA_CHARS = 20000
+
+
+def set_input_schema(draft, input_schema):
+    """
+    Attach (or with None, remove) a structured input schema to a draft.
+
+    The schema is part of the VALUE approval: it can only change while the
+    value category is unapproved and the draft is not finalized, so once the
+    teacher approves and finalizes, the schema is locked together with the
+    approved value constraints. Drafts without a schema behave exactly as
+    before (legacy 1-3 integer format).
+    """
+    import json
+
+    from input_schema import check_schema
+
+    if draft["finalized"]:
+        raise ValueError("Finalized draft cannot be modified")
+
+    if draft["approval"]["value"]:
+        raise ValueError("Approved category cannot be modified")
+
+    updated = copy.deepcopy(draft)
+
+    if input_schema is None:
+        updated.pop("input_schema", None)
+        return updated
+
+    if len(json.dumps(input_schema)) > MAX_INPUT_SCHEMA_CHARS:
+        raise ValueError("Input schema is too large")
+
+    checked = check_schema(input_schema)          # raises SchemaError (a ValueError)
+    if checked["legacy"]:
+        raise ValueError("A stored input schema cannot use the legacy flag")
+    updated["input_schema"] = {k: checked[k] for k in
+                               ("version", "variables", "items", "relations")}
+    return updated
+
+
 def finalize_draft(draft):
 
     if draft["finalized"]:

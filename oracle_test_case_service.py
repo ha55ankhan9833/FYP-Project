@@ -51,6 +51,11 @@ def generate_from_verified_oracle(
             "This oracle is not verified for the assessment's approved "
             "reference solution")
 
+    if preflight.get("input_schema") is not None:
+        raise OracleError(
+            "Verified oracles support only the legacy integer input format; "
+            "this assessment uses a structured input schema")
+
     constraints = preflight["constraints"]
     oracle.check_domain(parse_approved_value_constraints(constraints))
 

@@ -182,6 +182,9 @@ def validate_generation_preflight(assessment_id, teacher_id):
             "source_hash": actual_hash,
             "constraints": constraints,
             "code_constraints": code_constraints,
+            # Teacher-approved structured schema from the finalized draft,
+            # or None (legacy 1-3 integer format, unchanged behaviour).
+            "input_schema": approval.get("approved_input_schema"),
             "ready": True
         }
 

@@ -7,7 +7,8 @@ from teacher_approval_service import (
     create_draft,
     apply_action,
     approve_category,
-    finalize_draft
+    finalize_draft,
+    set_input_schema
 )
 from constraint_draft_db import save_draft, get_draft, get_draft_with_version, update_draft
 
@@ -131,6 +132,38 @@ def draft_approve(draft_id):
         updated = approve_category(draft, data.get("category"))
         update_draft(teacher_id, updated, version)
         return jsonify({"status": "success", "draft": updated}), 200
+    except ValueError as exc:
+        return _draft_error(exc)
+
+
+@approval_bp.put("/api/ai/drafts/<draft_id>/input-schema")
+@jwt_required()
+def draft_input_schema(draft_id):
+    """Set (object) or clear (null) the structured input schema of a draft.
+    Allowed only before the value category is approved; it is then locked by
+    approval and finalization like the value constraints themselves."""
+    from input_schema import SchemaError
+
+    teacher_id = teacher_id_or_error()
+    if teacher_id is None:
+        return _teacher_required()
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"input_schema"}:
+        return error_response("Body must be {\"input_schema\": object or null}", 400,
+                              "INVALID_REQUEST")
+
+    draft, version = get_draft_with_version(draft_id, teacher_id)
+    if draft is None:
+        return error_response("Draft not found", 404)
+
+    try:
+        updated = set_input_schema(draft, data["input_schema"])
+        update_draft(teacher_id, updated, version)
+        return jsonify({"status": "success", "draft": updated}), 200
+    except SchemaError as exc:
+        return error_response(str(exc), 400 if exc.code == "INVALID_INPUT_SCHEMA" else 422,
+                              exc.code)
     except ValueError as exc:
         return _draft_error(exc)
 

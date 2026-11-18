@@ -119,6 +119,131 @@ def select_inputs(variables, additional_inputs=None):
     return chosen
 
 
+# --------------------------------------------------------------------------
+# Structured inputs (teacher-approved input schema). The legacy functions
+# above are unchanged; these are used only when the finalized approval draft
+# carries an input schema.
+# --------------------------------------------------------------------------
+
+MAX_STRUCTURED_INPUT_CHARS = 10_000      # secure_test_case_save.MAX_INPUT_CHARS
+STRUCTURED_FILL_SEED = 42
+
+
+class StructuredInputError(ValueError):
+    """A teacher input failed schema validation; `details` lists every problem."""
+
+    def __init__(self, message, details):
+        super().__init__(message)
+        self.details = details
+
+
+def select_structured_inputs(input_schema, additional_inputs=None):
+    """
+    Exactly REQUIRED_TEST_CASE_COUNT unique inputs for a CHECKED schema:
+      1. teacher additional_inputs, EXACT text (spaces and newlines kept),
+         each validated against the schema (all problems reported together)
+      2. deterministic baseline candidates (boundary cases first) to fill
+    Duplicates (exact text, final newline optional) are rejected in the
+    teacher list and skipped among generated candidates. Unknown or invalid
+    inputs are never accepted.
+    """
+    from baseline_input_generator import MAX_COUNT, generate_candidates
+    from input_schema import validate_input
+    from test_case_validator import structured_input_key
+
+    if additional_inputs is not None and not isinstance(additional_inputs, list):
+        raise ValueError("additional_inputs must be a list")
+    additional_inputs = additional_inputs or []
+    if len(additional_inputs) > REQUIRED_TEST_CASE_COUNT:
+        raise ValueError(f"At most {REQUIRED_TEST_CASE_COUNT} additional inputs are allowed")
+
+    chosen, seen, problems = [], {}, []
+    for index, raw in enumerate(additional_inputs):
+        if not isinstance(raw, str) or not raw.strip():
+            problems.append({"index": index, "errors": [{"code": "EMPTY_INPUT",
+                                                         "message": "input is empty"}]})
+            continue
+        if len(raw) > MAX_STRUCTURED_INPUT_CHARS:
+            problems.append({"index": index, "errors": [{
+                "code": "INPUT_TOO_LARGE",
+                "message": f"input exceeds {MAX_STRUCTURED_INPUT_CHARS} characters"}]})
+            continue
+        if "\r" in raw:
+            problems.append({"index": index, "errors": [{
+                "code": "CARRIAGE_RETURN", "message": "use \\n line endings only"}]})
+            continue
+        key = structured_input_key(raw)
+        if key in seen:
+            problems.append({"index": index, "errors": [{
+                "code": "DUPLICATE_INPUT",
+                "message": f"same as additional input {seen[key]}"}]})
+            continue
+        check = validate_input(input_schema, raw)
+        if not check["valid"]:
+            problems.append({"index": index, "errors": check["errors"]})
+            continue
+        seen[key] = index
+        chosen.append({"input_data": raw, "category": "teacher_specified",
+                       "test_name": f"Teacher Case {len(chosen) + 1}"})
+
+    if problems:
+        raise StructuredInputError(
+            f"{len(problems)} additional input(s) are not valid for the approved input schema",
+            problems)
+
+    if len(chosen) < REQUIRED_TEST_CASE_COUNT:
+        generated = generate_candidates(input_schema, count=MAX_COUNT,
+                                        seed=STRUCTURED_FILL_SEED)["candidates"]
+        filled = 0
+        for candidate in generated:
+            if len(chosen) == REQUIRED_TEST_CASE_COUNT:
+                break
+            key = structured_input_key(candidate["input"])
+            if key in seen:
+                continue
+            seen[key] = None
+            filled += 1
+            chosen.append({"input_data": candidate["input"],
+                           "category": candidate["category"][:50],
+                           "test_name": f"Generated Case {filled}"})
+
+    if len(chosen) != REQUIRED_TEST_CASE_COUNT:
+        raise ValueError(
+            f"The approved input schema allows only {len(chosen)} distinct inputs; "
+            f"{REQUIRED_TEST_CASE_COUNT} unique test cases are required")
+
+    return chosen
+
+
+def build_structured_test_cases(input_schema, run_batch, additional_inputs=None):
+    """
+    Like build_test_cases, for a teacher-approved structured schema. The
+    reference receives EXACTLY the stored input text (no newline appended,
+    no whitespace collapsed), which is also exactly what grading feeds to
+    student programs. run_batch is called twice (determinism check).
+    """
+    inputs = select_structured_inputs(input_schema, additional_inputs)
+    stdin_values = [item["input_data"] for item in inputs]
+
+    first = run_batch(stdin_values)
+    second = run_batch(stdin_values)
+
+    if len(first) != len(inputs) or len(second) != len(inputs):
+        raise RuntimeError("Reference run returned wrong number of results")
+
+    test_cases = []
+    for index, (item, out1, out2) in enumerate(zip(inputs, first, second), start=1):
+        out1 = _check_output(index, out1)
+        if out1 != out2:
+            raise RuntimeError(f"Reference solution is non-deterministic on test {index}")
+        test_cases.append({"test_number": index, "test_name": item["test_name"],
+                           "category": item["category"], "input_data": item["input_data"],
+                           "expected_output": out1})
+
+    enforce_test_case_count(len(test_cases), "Generated test set")
+    return test_cases
+
+
 def build_test_cases(constraints, run_batch, additional_inputs=None):
     """
     Generic, assessment-independent construction of EXACTLY

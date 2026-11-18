@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from db import get_connection
 from grading_allocation import split_allocation
 from test_case_approval_validator import validate_assessment_approval
-from test_case_validator import validate_generated_test_cases
+from test_case_validator import structured_input_key, validate_generated_test_cases
 
 
 from test_case_policy import (  # noqa: E402
@@ -21,8 +21,19 @@ def save_generated_test_cases_secure(
     teacher_id,
     reference_solution_id,
     expected_source_hash,
-    test_cases
+    test_cases,
+    structured=False
 ):
+    """
+    structured=False (default): legacy 1-3 integer inputs, unchanged rules.
+    structured=True: inputs were built from the teacher-approved input schema;
+    the exact text (spaces/newlines) is kept and validated against the schema
+    re-read under lock. A mismatch between `structured` and the approved draft
+    (schema added/removed) is refused.
+    """
+    if type(structured) is not bool:
+        raise ValueError("structured must be true or false")
+
     if type(assessment_id) is not int or assessment_id <= 0:
         raise ValueError("Invalid assessment ID")
 
@@ -74,7 +85,10 @@ def save_generated_test_cases_secure(
             if not isinstance(case[field], str) or not case[field].strip():
                 raise ValueError(f"Invalid {field}")
 
-        normalized_input = " ".join(case["input_data"].split())
+        if structured:
+            normalized_input = structured_input_key(case["input_data"])
+        else:
+            normalized_input = " ".join(case["input_data"].split())
 
         if normalized_input in inputs:
             raise ValueError("Duplicate test input")
@@ -143,7 +157,13 @@ def save_generated_test_cases_secure(
         if actual_hash != stored_hash or actual_hash != expected_source_hash:
             raise ValueError("Reference source hash mismatch")
 
-        validate_generated_test_cases(constraints, test_cases)
+        approved_schema = approval.get("approved_input_schema")
+
+        if structured != (approved_schema is not None):
+            raise ValueError("Approved input schema changed")
+
+        validate_generated_test_cases(constraints, test_cases,
+                                      input_schema=approved_schema)
 
         if not total_marks.is_finite() or total_marks <= 0:
             raise ValueError("Invalid total marks")
