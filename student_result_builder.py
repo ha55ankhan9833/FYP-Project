@@ -34,6 +34,8 @@ TEACHER_ONLY_MARKER = "=== Python verification report (teacher only) ==="
 # Evaluations with no automatic test evidence (infrastructure-failure
 # manual grade, and the teacher's explicit manual-grading fallback).
 MANUAL_STATUSES = ("MANUAL_GRADING", "MANUALLY_GRADED")
+# AI analysis of the source only (llm_analysis_grading): no test evidence.
+UNVERIFIED_STATUSES = ("AI_ANALYSIS_UNVERIFIED",)
 
 TEACHER_APPROVED = "TEACHER_APPROVED"
 AI_ACCEPTED = "AI_RECOMMENDATION_ACCEPTED_BY_TEACHER"
@@ -62,7 +64,7 @@ def verified_test_marks(auto_status, tests_passed, tests_run, total_marks,
     test_alloc, _ = split_allocation(total_marks, validation_percentage)
     if auto_status == "COMPILATION_FAILED":
         return Decimal("0.00"), test_alloc
-    if auto_status in MANUAL_STATUSES:
+    if auto_status in MANUAL_STATUSES or auto_status in UNVERIFIED_STATUSES:
         return None, test_alloc
     if test_alloc == 0:
         return Decimal("0.00"), test_alloc
@@ -86,7 +88,9 @@ def compilation_diagnostics(feedback):
 def outcome_of(auto_status):
     return {"COMPILATION_FAILED": "COMPILATION_FAILED",
             "MANUAL_GRADING": "MANUAL_GRADE",
-            "MANUALLY_GRADED": "MANUALLY_GRADED"}.get(auto_status, "GRADED")
+            "MANUALLY_GRADED": "MANUALLY_GRADED",
+            "AI_ANALYSIS_UNVERIFIED": "CODE_REVIEWED_NOT_EXECUTED"}.get(
+                auto_status, "GRADED")
 
 
 def build_student_result(*, final_score, total_marks, validation_percentage,
@@ -135,6 +139,12 @@ def build_student_result(*, final_score, total_marks, validation_percentage,
         # No tests ran: do not present 0/0 as a test result.
         tests_passed = tests_run = None
         summary.append("Your teacher graded this submission manually.")
+    elif outcome == "CODE_REVIEWED_NOT_EXECUTED":
+        # Never present 0/0 or a predicted result as a test result.
+        tests_passed = tests_run = None
+        summary.append("Your program was not run against the hidden tests. "
+                       "Your marks come from a code review approved by your "
+                       "teacher.")
     elif outcome == "COMPILATION_FAILED":
         summary.append("Your program did not compile, so no tests were run. "
                        "See the compiler diagnostics.")

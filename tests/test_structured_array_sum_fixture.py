@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 import unittest
+from decimal import Decimal
 from pathlib import Path
 
 from fixtures import build_structured_array_sum_payloads as payloads
@@ -251,6 +252,260 @@ class DriverGuardTests(unittest.TestCase):
 
     def test_reviewed_source_matches_payload(self):
         self.assertEqual(driver.reviewed_source().encode("utf-8"), REFERENCE.read_bytes())
+
+    def test_demo_setup_steps_are_write_gated(self):
+        for step in ("rubric", "assign"):
+            with self.assertRaises(driver.Stop):
+                driver.require_confirm(step, None)
+            driver.require_confirm(step, "FYP_E2E_Test")
+        for step in ("teacher-view", "student-view"):
+            driver.require_confirm(step, None)
+
+
+class DemoSetupPayloadTests(unittest.TestCase):
+
+    def test_rubric_and_section_payloads_match_the_approved_plan(self):
+        rubric = json.loads((DATA / "07_rubric.json").read_text(encoding="utf-8"))
+        self.assertEqual((rubric["method"], rubric["body"]),
+                         ("PUT", {"criteria": payloads.RUBRIC_CRITERIA}))
+        self.assertEqual([(c["criterion_name"], c["max_marks"]) for c in payloads.RUBRIC_CRITERIA],
+                         [("Logic & Correctness", "3.00"), ("Code Quality", "2.00")])
+        section = json.loads((DATA / "08_section_assignment.json").read_text(encoding="utf-8"))
+        self.assertEqual((section["method"], section["body"]),
+                         ("POST", {"section_ids": ["SEC000001"]}))
+
+    def test_rubric_plus_tests_equal_total_marks(self):
+        from decimal import Decimal
+        from grading_allocation import split_allocation
+        tests, rubric = split_allocation(payloads.ASSESSMENT["total_marks"],
+                                         payloads.ASSESSMENT["validation_percentage"])
+        self.assertEqual(rubric, sum(Decimal(c["max_marks"]) for c in payloads.RUBRIC_CRITERIA))
+        self.assertEqual(tests, Decimal("5.00"))
+
+
+class ScriptedApi:
+    """Answers (method, path) from a script; records every call."""
+
+    def __init__(self, responses):
+        self.responses, self.calls = responses, []
+
+    def call(self, method, path, payload=None, ok=(200, 201), **kwargs):
+        self.calls.append((method, path, payload))
+        status, data = self.responses[(method, path)](payload)
+        if status not in ok:
+            raise driver.Stop(f"{method} {path} -> HTTP {status}")
+        return status, data
+
+
+class DemoSetupStepTests(unittest.TestCase):
+
+    def setUp(self):
+        from unittest import mock
+        self.state = {"assessment_id": 6}
+        self.tests = [(28 + i, i + 1, "0.50") for i in range(10)]
+        patches = [
+            mock.patch.object(driver, "owned_assessment", lambda state: 6),
+            mock.patch.object(driver, "test_case_rows", lambda aid: self.tests),
+            mock.patch.object(driver, "save_state", lambda state: None),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        self.criteria = []
+        self.sections = []
+
+    def rubric(self, _=None):
+        total = sum(Decimal(c["max_marks"]) for c in self.criteria) if self.criteria else 0
+        return 200, {"rubric": {
+            "storage_available": True, "locked": False, "total_marks": "10.00",
+            "rubric_marks_allocated": "5.00", "test_marks_allocated": "5.00",
+            "rubric_complete": bool(self.criteria) and total == Decimal("5.00"),
+            "criteria": [dict(c, rubric_criterion_id=3 + i) for i, c in enumerate(self.criteria)]}}
+
+    def put_rubric(self, payload):
+        self.criteria = [dict(c) for c in payload["criteria"]]
+        return self.rubric()
+
+    def api(self):
+        return ScriptedApi({
+            ("GET", "/api/assessments/6/rubric"): self.rubric,
+            ("PUT", "/api/assessments/6/rubric"): self.put_rubric,
+            ("GET", "/api/assessments/6/sections"): lambda _: (200, {"sections": self.sections}),
+            ("GET", "/api/assessments/6/assignable-sections"):
+                lambda _: (200, {"sections": [{"section_id": "SEC000001", "already_assigned": 0}]}),
+            ("POST", "/api/assessments/6/sections"): self.post_sections,
+        })
+
+    def post_sections(self, payload):
+        self.sections = [{"section_id": s, "assessment_section_id": 3, "enrolled_students": 4,
+                          "submission_count": 0} for s in payload["section_ids"]]
+        return 201, {}
+
+    def test_rubric_written_once_then_idempotent(self):
+        api = self.api()
+        driver.step_rubric(api, self.state)
+        driver.step_rubric(api, self.state)
+        self.assertEqual([c for c in api.calls if c[0] == "PUT"],
+                         [("PUT", "/api/assessments/6/rubric",
+                           {"criteria": payloads.RUBRIC_CRITERIA})])
+        self.assertEqual(self.state["rubric_criterion_ids"], [3, 4])
+
+    def test_rubric_refuses_to_overwrite_a_different_rubric(self):
+        self.criteria = [{"criterion_name": "Other", "max_marks": "5.00", "description": None}]
+        api = self.api()
+        with self.assertRaises(driver.Stop):
+            driver.step_rubric(api, self.state)
+        self.assertFalse([c for c in api.calls if c[0] != "GET"])
+
+    def test_rubric_refuses_when_tests_are_not_ten(self):
+        self.tests = self.tests[:9]
+        api = self.api()
+        with self.assertRaises(driver.Stop):
+            driver.step_rubric(api, self.state)
+        self.assertEqual(api.calls, [])
+
+    def test_assign_requires_rubric_first(self):
+        api = self.api()
+        with self.assertRaises(driver.Stop):
+            driver.step_assign(api, self.state)
+        self.assertFalse([c for c in api.calls if c[0] != "GET"])
+
+    def test_assign_once_then_idempotent(self):
+        self.criteria = [dict(c) for c in payloads.RUBRIC_CRITERIA]
+        api = self.api()
+        driver.step_assign(api, self.state)
+        driver.step_assign(api, self.state)
+        self.assertEqual([c for c in api.calls if c[0] == "POST"],
+                         [("POST", "/api/assessments/6/sections", {"section_ids": ["SEC000001"]})])
+        self.assertEqual(self.state["assessment_section_id"], 3)
+
+    def test_assign_refuses_when_other_sections_exist(self):
+        self.criteria = [dict(c) for c in payloads.RUBRIC_CRITERIA]
+        self.sections = [{"section_id": "SEC000099", "assessment_section_id": 9}]
+        api = self.api()
+        with self.assertRaises(driver.Stop):
+            driver.step_assign(api, self.state)
+        self.assertFalse([c for c in api.calls if c[0] == "POST"])
+
+    def test_student_view_requires_known_test_student(self):
+        with self.assertRaises(driver.Stop):
+            driver.step_student_view(self.api(), self.state, student="NOT-AN-E2E-STUDENT")
+
+    def test_hidden_leak_scan(self):
+        tests = [(1, "3\n10 20 30\n", "60\n"), (2, "1\n5\n", "5000000000\n")]
+        self.assertEqual(driver.hidden_leaks({"assessments": [{"title": "Array Sum"}]}, tests), [])
+        self.assertEqual(driver.hidden_leaks({"x": "3\n10 20 30", "y": "5000000000"}, tests),
+                         ["test 1 input", "test 2 expected_output"])
+        self.assertEqual(driver.hidden_leaks({"expected_output": ""}, []), ["field expected_output"])
+
+    def test_w3_steps_are_write_gated(self):
+        for step in ("w3-submit", "w3-manual-grade"):
+            with self.assertRaises(driver.Stop):
+                driver.require_confirm(step, None)
+            driver.require_confirm(step, "FYP_E2E_Test")
+        driver.require_confirm("w3-verify", None)
+
+    def test_w3_payloads_are_reviewed_and_honest(self):
+        sub = driver.w3_source()
+        self.assertEqual(sub["file_name"], "w3_synthetic_submission.cpp")
+        self.assertIn("SYNTHETIC E2E SUBMISSION", sub["source_code"])
+        self.assertNotIn("\r", sub["source_code"])
+        grade = json.loads((DATA / "10_w3_manual_grade.json").read_text(encoding="utf-8"))
+        self.assertEqual(grade["path"], "/api/submissions/<submission_id>/evaluation/manual-grade")
+        body = grade["body"]
+        self.assertEqual(set(body), {"final_score", "confirm_manual_grade", "justification",
+                                     "instructor_feedback"})       # route's allowed fields
+        self.assertIs(body["confirm_manual_grade"], True)
+        rubric_total = sum(Decimal(c["max_marks"]) for c in payloads.RUBRIC_CRITERIA)
+        self.assertEqual(Decimal(body["final_score"]), rubric_total)   # test portion 0, not run
+        self.assertEqual(Decimal(body["final_score"]), driver.W3_FINAL_SCORE)
+        for text in (body["justification"], body["instructor_feedback"]):
+            self.assertIn("NOT AUTO-EXECUTED", text)
+            self.assertNotRegex(text.lower(), r"\btests? passed\b|\d+\s*/\s*10 tests")
+        import evaluation_review_service as review
+        self.assertEqual(review.validate_final_score(body["final_score"], Decimal("10.00")),
+                         Decimal("5.00"))
+
+    def test_w3_submit_refuses_unexpected_existing_submissions(self):
+        from unittest import mock
+        api = ScriptedApi({
+            ("GET", "/api/assessments/6/rubric"): lambda _: (200, {"rubric": {
+                "rubric_complete": True,
+                "criteria": [{"rubric_criterion_id": 3}, {"rubric_criterion_id": 4}]}}),
+            ("GET", "/api/assessments/6/sections"):
+                lambda _: (200, {"sections": [{"section_id": "SEC000001"}]}),
+        })
+        state = {"assessment_id": 6, "rubric_criterion_ids": [3, 4]}
+        rows = [(9, "E2E-TEST-0002", 9, "PENDING", 0, None, None)]
+        with mock.patch.object(driver, "owned_assessment", lambda s: 6), \
+                mock.patch.object(driver, "require_ten_tests", lambda aid: Decimal("5.00")), \
+                mock.patch.object(driver, "a6_submissions", lambda aid: rows):
+            with self.assertRaises(driver.Stop):
+                driver.step_w3_submit(api, state, student_api_factory=self.fail)
+            state["rubric_criterion_ids"] = [1, 2]
+            with self.assertRaises(driver.Stop):
+                driver.step_w3_submit(api, state, student_api_factory=self.fail)
+
+    def test_w3_manual_grade_refuses_non_pending_or_graded(self):
+        from unittest import mock
+        api = ScriptedApi({("GET", "/api/grading/status"):
+                           lambda _: (200, {"student_execution_enabled": False})})
+        state = {"assessment_id": 6, "w3_submission_id": 9}
+        for row in ((9, "E2E-TEST-0001", 9, "PROCESSING", 1, "w", None),
+                    (9, "E2E-TEST-0001", 9, "COMPLETED", 1, "w", "COMPLETED")):
+            with mock.patch.object(driver, "owned_assessment", lambda s: 6), \
+                    mock.patch.object(driver, "a6_submissions", lambda aid, r=row: [r]):
+                with self.assertRaises(driver.Stop):
+                    driver.step_w3_manual_grade(api, state)
+            self.assertFalse([c for c in api.calls if c[0] == "POST"])
+        with mock.patch.object(driver, "owned_assessment", lambda s: 6), \
+                self.assertRaises(driver.Stop):
+            driver.step_w3_manual_grade(api, {"assessment_id": 6})
+
+    def test_gate_l_steps_are_write_gated(self):
+        for step in ("l-submit", "l-finalize"):
+            with self.assertRaises(driver.Stop):
+                driver.require_confirm(step, None)
+            driver.require_confirm(step, "FYP_E2E_Test")
+        for step in ("l-report", "l-verify"):
+            driver.require_confirm(step, None)
+
+    def test_gate_l_payloads_are_reviewed_and_honest(self):
+        src = driver.l_source()
+        self.assertIn("SYNTHETIC E2E SUBMISSION", src["source_code"])
+        self.assertIn("int sum = 0;", src["source_code"])
+        grade = json.loads((DATA / "11_gate_l_finalize.json").read_text(encoding="utf-8"))
+        self.assertTrue(grade["path"].endswith("/evaluation/finalize"))
+        body = grade["body"]
+        self.assertEqual(set(body), {"final_score", "criteria", "instructor_feedback"})
+        self.assertEqual([c["criterion_name"] for c in body["criteria"]],
+                         [c["criterion_name"] for c in payloads.RUBRIC_CRITERIA])
+        total = sum(Decimal(c["marks"]) for c in body["criteria"])
+        self.assertEqual(total, Decimal(body["final_score"]))       # no test marks added
+        for c, r in zip(body["criteria"], payloads.RUBRIC_CRITERIA):
+            self.assertLessEqual(Decimal(c["marks"]), Decimal(r["max_marks"]))
+        self.assertIn("NOT EXECUTED", body["instructor_feedback"])
+        self.assertNotRegex(body["instructor_feedback"].lower(), r"\btests? passed\b")
+
+    def test_gate_l_submit_refuses_unexpected_submissions(self):
+        from unittest import mock
+        state = {"assessment_id": 6, "rubric_criterion_ids": [3, 4], "w3_submission_id": 6}
+        rows = [(6, "E2E-TEST-0001", 5, "COMPLETED", 0, "m", "MANUALLY_GRADED"),
+                (8, "E2E-TEST-0003", 7, "PENDING", 0, None, None)]
+        with mock.patch.object(driver, "a6_submissions", lambda aid: rows):
+            with self.assertRaises(driver.Stop):
+                driver.l_rows(6, state)
+        with mock.patch.object(driver, "a6_submissions", lambda aid: rows[:1]):
+            self.assertEqual(driver.l_rows(6, state), [])
+
+    def test_values_published_in_the_statement_are_not_leaks(self):
+        tests = [(2, "1\n-1000000000\n", "-1000000000\n"), (3, "2\n7 9\n", "1234567\n")]
+        fmt = payloads.ASSESSMENT["input_format"]
+        listing = {"assessments": [{"input_format": fmt}]}
+        self.assertEqual(driver.hidden_leaks(listing, tests), ["test 2 expected_output"])
+        self.assertEqual(driver.hidden_leaks(listing, tests, fmt), [])
+        listing["assessments"].append({"note": "1234567"})
+        self.assertEqual(driver.hidden_leaks(listing, tests, fmt), ["test 3 expected_output"])
 
 
 if __name__ == "__main__":

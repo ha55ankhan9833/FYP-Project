@@ -128,7 +128,7 @@ def verify_record(key, report, report_sha256, tests, fixture_sha256,
              f"{key}: recorded fixture hash differs from the approved hash")
     _require(fixture_sha256 == reviewed["fixture_sha256"],
              f"{key}: fixture file changed since it was executed")
-    _require(report.get("assessment_id") == teh.ASSESSMENT_ID,
+    _require(report.get("assessment_id") == teh.assessment_for(key),
              f"{key}: wrong assessment")
     _require(report.get("label") ==
              "TRUSTED DEVELOPER FIXTURE - not a student submission",

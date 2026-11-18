@@ -136,9 +136,11 @@ def load_submission(submission_id, connection_factory):
 
 def check_eligibility(sub):
     problems = []
-    if int(sub["assessment_id"]) != ASSESSMENT_ID:
+    key, digest = match_fixture(sub["source_code"] or "")
+    expected_assessment = teh.assessment_for(key) if key else None
+    if key is not None and int(sub["assessment_id"]) != expected_assessment:
         problems.append(f"submission is for assessment {sub['assessment_id']}, "
-                        f"not {ASSESSMENT_ID}")
+                        f"not {expected_assessment}")
     if sub["job_id"] is None:
         problems.append("no GradingJob exists for this submission")
     elif sub["job_status"] != "PENDING":
@@ -151,7 +153,6 @@ def check_eligibility(sub):
         problems.append("student is not enrolled in the assigned section/course")
     if not sub["teacher_linked"]:
         problems.append("assessment teacher does not teach this section/course")
-    key, digest = match_fixture(sub["source_code"] or "")
     if key is None:
         problems.append(f"source sha256 {digest} is not an approved fixture "
                         f"- this tool never grades arbitrary student code")
@@ -174,8 +175,9 @@ def build_plan(submission_id, connection_factory=None, test_loader=None,
     sub = load_submission(submission_id, connection_factory)
     key, digest = check_eligibility(sub)
 
-    tests = test_loader(ASSESSMENT_ID)
-    config = config_loader(ASSESSMENT_ID)
+    assessment_id = teh.assessment_for(key)
+    tests = test_loader(assessment_id)
+    config = config_loader(assessment_id)
     test_alloc, rubric_alloc = split_allocation(config["total_marks"],
                                                 config["validation_percentage"])
     report, report_sha = reg.read_record(key)

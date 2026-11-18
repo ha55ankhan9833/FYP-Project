@@ -50,7 +50,8 @@ def grading_status(job_status, evaluation_exists, result_status,
     if result_status == FINALIZED:
         return "RESULT_PUBLISHED"
     if evaluation_exists:
-        if auto_status == "NEEDS_REVIEW":
+        # AI-only analysis (no test execution) always needs teacher review.
+        if auto_status in ("NEEDS_REVIEW", "AI_ANALYSIS_UNVERIFIED"):
             return "AUTO_GRADED_NEEDS_REVIEW"
         return "AUTO_GRADED_AWAITING_REVIEW"
     if job_status == "FAILED":
@@ -319,6 +320,18 @@ def get_teacher_submission_evaluation(submission_id, teacher_id,
                 e[1], e[6], e[7], s[8], s[9])
             evaluation["verified_test_marks"] = (None if test_marks is None
                                                  else str(test_marks))
+            # Structured evaluation report (teacher only): mode, evidence
+            # basis, constraints, AI analysis, test status, suggested marks.
+            from evaluation_report import (derive_report, parse_report,
+                                           with_teacher_status)
+            report = parse_report(e[2]) or derive_report(
+                auto_status=e[1], tests_passed=e[6], tests_run=e[7],
+                suggested_score=evaluation["suggested_score"],
+                total_marks=_dec(s[8]), test_marks=evaluation["verified_test_marks"],
+                ai_criteria=evaluation["ai_criteria"], feedback=e[2])
+            evaluation["evaluation_report"] = with_teacher_status(
+                report, e[4], evaluation["final_score"],
+                evaluation["teacher_criteria"])
 
         return {
             "submission_id": int(s[0]),

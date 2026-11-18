@@ -86,6 +86,78 @@ ADDITIONAL_INPUTS = [
 ]
 
 
+# Owner-approved demo setup (W1/W2, docs/A6_DEMO_SETUP_PROPOSAL.md).
+# total 10 at 50 % validation -> tests 5.00 (10 x 0.50) + rubric 5.00.
+RUBRIC_CRITERIA = [
+    {"criterion_name": "Logic & Correctness", "max_marks": "3.00",
+     "description": (
+         "Reads exactly N values and sums them with a 64-bit type (long long) "
+         "so sums up to 100 x 1e9 do not overflow; handles negative values "
+         "and N = 1.")},
+    {"criterion_name": "Code Quality", "max_marks": "2.00",
+     "description": (
+         "Readable structure and naming, appropriate types, no unnecessary "
+         "work; reads standard input and prints only the sum.")},
+]
+SECTION_ID = "SEC000001"
+
+# Owner-approved W3: one synthetic submission (E2E-TEST-0001), never
+# compiled or run, graded through the existing manual-grade fallback.
+# Score policy (owner-approved option 1, conservative): the test-case
+# portion is NOT run and NOT awarded; only rubric marks from code review.
+W3_STUDENT = "E2E-TEST-0001"
+W3_SUBMISSION_FILE = "w3_synthetic_submission.cpp"
+W3_MANUAL_GRADE = {
+    "final_score": "5.00",
+    "confirm_manual_grade": True,
+    "justification": (
+        "MANUAL / NOT AUTO-EXECUTED (W3 E2E demo). Secure student execution is "
+        "disabled, so the 10 hidden test cases were NOT compiled or run; the "
+        "test-case portion (5.00) is not awarded and nothing is claimed about "
+        "test results. Rubric by code review only: Logic & Correctness "
+        "3.00/3.00 (reads N, then N values into a long long accumulator; "
+        "handles negative values and N = 1); Code Quality 2.00/2.00 (clear "
+        "names, prints only the sum). Final 0.00 + 3.00 + 2.00 = 5.00 of 10.00. "
+        "Breakdown is recorded as text only (no per-criterion approval rows)."),
+    "instructor_feedback": (
+        "MANUAL GRADE - NOT AUTO-EXECUTED. Your program was not compiled or run "
+        "because automatic testing is currently unavailable, so the test-case "
+        "portion was not awarded. Rubric marks from code review: Logic & "
+        "Correctness 3.00 of 3.00, Code Quality 2.00 of 2.00. Final mark: "
+        "5.00 of 10.00."),
+}
+
+
+# Owner-approved Gate L (automatic LLM analysis demo, no execution).
+# The submitted bytes are the reviewed fixture
+# dev_tools/trusted_fixtures/array_sum_int_accumulator.cpp (int accumulator).
+GATE_L_STUDENT = "E2E-TEST-0002"
+GATE_L_FIXTURE = "array_sum_int_accumulator"
+# Teacher review, fixed BEFORE reading the model output (deterministic):
+# - Logic & Correctness 1.50/3.00: reads N and exactly N values, loop and
+#   negative values are handled, but the int accumulator overflows for sums
+#   beyond the 32-bit range, which the statement explicitly warns about.
+# - Code Quality 2.00 -> 1.50/2.00: short, readable, sensible names; the
+#   rubric's "appropriate types" point is lost for the int accumulator.
+# - Test-case portion (5.00): NOT RUN, not awarded; final = criteria only.
+GATE_L_FINALIZE = {
+    "final_score": "3.00",
+    "criteria": [
+        {"criterion_name": "Logic & Correctness", "marks": "1.50",
+         "comment": "Reads input correctly; the int accumulator overflows for "
+                    "sums beyond the 32-bit range, which the statement warns about."},
+        {"criterion_name": "Code Quality", "marks": "1.50",
+         "comment": "Clear and readable; use a 64-bit type (long long) for the sum."},
+    ],
+    "instructor_feedback": (
+        "AUTOMATIC CODE REVIEW - NOT EXECUTED. No test cases were run on your "
+        "program, so the test-case portion was not awarded. Marks come from an "
+        "AI code review that your teacher checked and adjusted: Logic & "
+        "Correctness 1.50 of 3.00, Code Quality 1.50 of 2.00. Main issue: the "
+        "sum is stored in an int and can overflow; use long long."),
+}
+
+
 def oracle(text):
     """Independent Python oracle: parse N, then exactly N integers; sum them."""
     lines = text.split("\n")
@@ -160,6 +232,32 @@ def main():
             {"additional_inputs": ADDITIONAL_INPUTS},
             "Without a sandbox or allow-listed hash this returns HTTP 409 "
             "EXPECTED_OUTPUT_UNVERIFIABLE and saves nothing."),
+        "07_rubric.json": request(
+            "PUT", "/api/assessments/<new_id>/rubric",
+            {"criteria": RUBRIC_CRITERIA},
+            "W1. Must precede section assignment (students cannot submit "
+            "while the 5.00 rubric allocation is undefined)."),
+        "08_section_assignment.json": request(
+            "POST", "/api/assessments/<new_id>/sections",
+            {"section_ids": [SECTION_ID]},
+            "W2. FYP_E2E_Test only: SEC000001 holds only the E2E test students."),
+        "09_w3_submission.json": request(
+            "POST", "/api/assessments/<new_id>/submissions",
+            {"file_name": W3_SUBMISSION_FILE,
+             "source_code": (OUT / W3_SUBMISSION_FILE).read_bytes().decode("utf-8")},
+            f"W3. Student {W3_STUDENT} token only. Creates a Submission and a "
+            "PENDING GradingJob; the source is never compiled or executed."),
+        "10_w3_manual_grade.json": request(
+            "POST", "/api/submissions/<submission_id>/evaluation/manual-grade",
+            W3_MANUAL_GRADE,
+            "W3. Teacher BIIT235. Existing manual-grade fallback: finalizes in "
+            "one call (MANUALLY_GRADED, tests_run 0). Do NOT call /finalize after it."),
+        "11_gate_l_finalize.json": request(
+            "POST", "/api/submissions/<submission_id>/evaluation/finalize",
+            GATE_L_FINALIZE,
+            "Gate L. Teacher BIIT235 approves the AI_ANALYSIS_UNVERIFIED "
+            "evaluation with criterion marks; verified test marks are 0 (not "
+            "run), so final_score must equal the criterion total."),
         "planned_test_cases.json": {
             "note": "Exact inputs the structured generator selects for this "
                     "schema; expected outputs are from an independent Python "

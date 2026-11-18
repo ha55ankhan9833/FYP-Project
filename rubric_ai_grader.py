@@ -84,6 +84,23 @@ def build_llm_evidence(execution_evidence):
     else:
         evidence_type = "no_test_execution"
 
+    instruction = (
+        "Test-case marks are calculated separately by deterministic "
+        "code and are NOT yours to award. Mark ONLY the rubric "
+        "criteria listed. Use these results as factual evidence of "
+        "behaviour; do not re-score the tests and do not total marks."
+    )
+    if evidence_type == "no_test_execution":
+        # LLM analysis mode: there is no behaviour evidence at all.
+        instruction += (
+            " NO TESTS WERE COMPILED OR RUN for this submission. Judge the "
+            "code only by reading it. Do NOT cite any test number, do NOT "
+            "claim that any test passed or failed, and leave "
+            "cited_failed_tests and observed_failures empty. Report possible "
+            "defects as suspected_bugs. Judge code quality (readability, "
+            "naming, structure) separately from correctness."
+        )
+
     return {
         "evidence_type": evidence_type,
         "tests_run": tests_run,
@@ -92,12 +109,7 @@ def build_llm_evidence(execution_evidence):
         "cases_shown": len(cases),
         "cases": cases,
         "code_constraint_checks": constraint_checks,
-        "grading_instruction": (
-            "Test-case marks are calculated separately by deterministic "
-            "code and are NOT yours to award. Mark ONLY the rubric "
-            "criteria listed. Use these results as factual evidence of "
-            "behaviour; do not re-score the tests and do not total marks."
-        )
+        "grading_instruction": instruction
     }
 
 

@@ -1,6 +1,6 @@
 """
-DEVELOPMENT-ONLY trusted C++ execution demo against Assessment 5's real
-10 hidden test cases.
+DEVELOPMENT-ONLY trusted C++ execution demo against the real 10 hidden test
+cases of the fixture's own assessment (FIXTURE_ASSESSMENTS: 5 or 6).
 
     .venv\\Scripts\\python.exe dev_tools\\trusted_execution_harness.py --fixture prime_correct
         -> prints the plan only (no compilation, no execution)
@@ -9,7 +9,7 @@ DEVELOPMENT-ONLY trusted C++ execution demo against Assessment 5's real
            dev_tools/trusted_fixtures/approved_for_execution.json
 
 Hard limits
-- Only the three named fixtures in FIXTURES can be used. No path, file
+- Only the named fixtures in FIXTURES can be used. No path, file
   name or source text is ever accepted from the command line, a request
   or any other input. Nothing in the application imports this module.
 - The fixture file is re-hashed immediately before compiling; the exact
@@ -54,6 +54,16 @@ FIXTURES = {
     "prime_correct": "prime_correct.cpp",
     "prime_buggy_square": "prime_buggy_square.cpp",
     "prime_compile_error": "prime_compile_error.cpp",
+    # Assessment 6 automatic-evaluation demo (needs its own owner approval).
+    "array_sum_int_accumulator": "array_sum_int_accumulator.cpp",
+}
+
+# Each fixture runs ONLY against its own assessment's approved tests.
+FIXTURE_ASSESSMENTS = {
+    "prime_correct": 5,
+    "prime_buggy_square": 5,
+    "prime_compile_error": 5,
+    "array_sum_int_accumulator": 6,
 }
 
 RUN_TIMEOUT_SECONDS = 2
@@ -77,6 +87,11 @@ def fixture_path(key):
     if path.parent != FIXTURE_DIR.resolve():
         raise NotApproved("Fixture outside the trusted fixture folder")
     return path
+
+
+def assessment_for(key):
+    fixture_path(key)                       # unknown keys are refused
+    return FIXTURE_ASSESSMENTS[key]
 
 
 def fixture_sha256(key):
@@ -148,12 +163,13 @@ def run_fixture(key, tests, test_allocation, approvals=None,
     """
 
     source, digest = require_approval(key, approvals)
-    enforce_test_case_count(len(tests), f"Assessment {ASSESSMENT_ID}")
+    assessment_id = assessment_for(key)
+    enforce_test_case_count(len(tests), f"Assessment {assessment_id}")
     compile_fn = compile_fn or cpp_compilation_service.compile_cpp_source
     run_fn = run_fn or default_run
     compiler_path = compiler_path or shutil.which("g++")
 
-    report = {"fixture": key, "sha256": digest, "assessment_id": ASSESSMENT_ID,
+    report = {"fixture": key, "sha256": digest, "assessment_id": assessment_id,
               "label": "TRUSTED DEVELOPER FIXTURE - not a student submission"}
     started = time.perf_counter()
     compiled = compile_fn(source)
@@ -213,16 +229,20 @@ def run_fixture(key, tests, test_allocation, approvals=None,
 # Command line (fixture KEY only)
 # ----------------------------------------------------------------------
 
-def load_assessment_5():
+def load_assessment(assessment_id):
     from dev_tools.grading_preview_harness import install_read_only_guard
     import grading_configuration_service
     import grading_test_case_loader
     install_read_only_guard()
-    tests = grading_test_case_loader.load_grading_test_cases(ASSESSMENT_ID)
-    config = grading_configuration_service.load_grading_configuration(ASSESSMENT_ID)
+    tests = grading_test_case_loader.load_grading_test_cases(assessment_id)
+    config = grading_configuration_service.load_grading_configuration(assessment_id)
     test_alloc, _ = split_allocation(config["total_marks"],
                                      config["validation_percentage"])
     return tests, test_alloc
+
+
+def load_assessment_5():
+    return load_assessment(ASSESSMENT_ID)
 
 
 def describe_plan(key):
@@ -239,7 +259,8 @@ def describe_plan(key):
         "per_test": f"stdin = test input + newline; timeout {RUN_TIMEOUT_SECONDS}s; "
                     f"cwd = build folder; env = SystemRoot + PATH(compiler bin, "
                     f"System32) only; stdout cap {MAX_STDOUT_CHARS} chars",
-        "tests": "10 hidden test cases of Assessment 5, loaded read-only",
+        "tests": f"10 hidden test cases of Assessment {assessment_for(key)}, "
+                 f"loaded read-only",
     }
 
 
@@ -255,7 +276,9 @@ def main():
         print("PLAN ONLY - nothing compiled or executed")
         return
 
-    tests, test_alloc = load_assessment_5()
+    assessment_id = assessment_for(args.fixture)
+    tests, test_alloc = (load_assessment_5() if assessment_id == ASSESSMENT_ID
+                         else load_assessment(assessment_id))
     try:
         report = run_fixture(args.fixture, tests, test_alloc)
     except NotApproved as error:

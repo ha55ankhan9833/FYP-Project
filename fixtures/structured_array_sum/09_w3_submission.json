@@ -1,0 +1,9 @@
+{
+  "method": "POST",
+  "path": "/api/assessments/<new_id>/submissions",
+  "body": {
+    "file_name": "w3_synthetic_submission.cpp",
+    "source_code": "// SYNTHETIC E2E SUBMISSION (W3) - written for the FYP_E2E_Test demo only.\n// Submitted as student E2E-TEST-0001 to Assessment 6 and graded MANUALLY.\n// It is never compiled or executed by the backend or by the E2E driver.\n#include <iostream>\n\nint main() {\n    int n = 0;\n    std::cin >> n;\n    long long sum = 0;\n    for (int i = 0; i < n; ++i) {\n        long long value = 0;\n        std::cin >> value;\n        sum += value;\n    }\n    std::cout << sum << '\\n';\n    return 0;\n}\n"
+  },
+  "notes": "W3. Student E2E-TEST-0001 token only. Creates a Submission and a PENDING GradingJob; the source is never compiled or executed."
+}

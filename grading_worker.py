@@ -70,5 +70,9 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1 and sys.argv[1] == "--preview":
         print(preview_next_grading_job())
+    elif len(sys.argv) > 1 and sys.argv[1] == "--llm-analysis":
+        # Opt-in: analyse one job WITHOUT execution (llm_analysis_grading).
+        from llm_analysis_grading import WORKER_PREFIX, run_analysis_worker_once
+        print(run_analysis_worker_once(f"{WORKER_PREFIX}-{default_worker_id()}"[:100]))
     else:
         print(run_worker_once())

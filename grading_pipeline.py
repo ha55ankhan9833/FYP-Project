@@ -438,6 +438,28 @@ def _grade(claim, worker_id, deps):
 
     feedback = (compose_feedback(score, evidence, ai_result, constraint_report)
                 + report_to_text(report))[:20000]
+    if evidence["tests_run"]:
+        # Structured teacher report (VERIFIED_EXECUTION); appended whole so
+        # the JSON is never truncated (the text above is shortened instead).
+        from evaluation_report import (VERIFIED_EXECUTION, build_report,
+                                       report_section)
+        section = report_section(build_report(
+            mode=VERIFIED_EXECUTION, evidence_basis=provenance,
+            assessment={"assessment_id": assessment_id,
+                        "total_marks": config["total_marks"]},
+            constraints_text=context.get("constraints"),
+            constraint_report=constraint_report, rubric=rubric,
+            ai_result=ai_result, test_alloc=test_alloc,
+            rubric_alloc=rubric_alloc, tests_configured=len(test_cases),
+            tests_run=evidence["tests_run"],
+            tests_passed=evidence["tests_passed"],
+            failed_test_numbers=report["tests"]["failed_test_numbers"],
+            test_marks=score["test_score"],
+            rubric_marks=score["rubric_score"] if ai_result else None,
+            suggested_total=score["suggested_score"],
+            reliability_flags=[w["message"] for w in report["warnings"]]))
+        if len(section) < 20000:
+            feedback = feedback[:20000 - len(section)] + section
     needs_review = bool(
         (ai_result and ai_result.get("manual_review_required"))
         or constraint_report["requires_review"]

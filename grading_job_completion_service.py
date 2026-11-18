@@ -64,7 +64,8 @@ VALUES (?, ?, ?, ?);
 """
 
 
-ALLOWED_AUTO_STATUSES = ("COMPLETED", "NEEDS_REVIEW")
+# AI_ANALYSIS_UNVERIFIED: llm_analysis_grading (no execution, tests_run = 0).
+ALLOWED_AUTO_STATUSES = ("COMPLETED", "NEEDS_REVIEW", "AI_ANALYSIS_UNVERIFIED")
 MAX_CRITERION_RATING = Decimal("999.99")   # EvaluationCriterion DECIMAL(5,2)
 
 

@@ -1,0 +1,11 @@
+{
+  "method": "POST",
+  "path": "/api/submissions/<submission_id>/evaluation/manual-grade",
+  "body": {
+    "final_score": "5.00",
+    "confirm_manual_grade": true,
+    "justification": "MANUAL / NOT AUTO-EXECUTED (W3 E2E demo). Secure student execution is disabled, so the 10 hidden test cases were NOT compiled or run; the test-case portion (5.00) is not awarded and nothing is claimed about test results. Rubric by code review only: Logic & Correctness 3.00/3.00 (reads N, then N values into a long long accumulator; handles negative values and N = 1); Code Quality 2.00/2.00 (clear names, prints only the sum). Final 0.00 + 3.00 + 2.00 = 5.00 of 10.00. Breakdown is recorded as text only (no per-criterion approval rows).",
+    "instructor_feedback": "MANUAL GRADE - NOT AUTO-EXECUTED. Your program was not compiled or run because automatic testing is currently unavailable, so the test-case portion was not awarded. Rubric marks from code review: Logic & Correctness 3.00 of 3.00, Code Quality 2.00 of 2.00. Final mark: 5.00 of 10.00."
+  },
+  "notes": "W3. Teacher BIIT235. Existing manual-grade fallback: finalizes in one call (MANUALLY_GRADED, tests_run 0). Do NOT call /finalize after it."
+}
