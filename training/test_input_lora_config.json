@@ -48,11 +48,25 @@
   "gradient_accumulation_steps": 1,
   "num_train_epochs": 3,
   "precision": "fp32 (T5 is unstable in fp16; T4 has no bf16)",
-  "eval_strategy": "epoch",
-  "save_strategy": "epoch",
+  "eval_strategy": "steps",
+  "save_strategy": "steps",
+  "eval_steps": 500,
+  "save_steps": 500,
   "load_best_model_at_end": true,
   "metric_for_best_model": "eval_loss",
-  "save_total_limit": 2
+  "save_total_limit": 2,
+  "schedule_note": "Periodic checkpoints every 500 of 8859 optimizer steps (17 saves + final); evaluation runs at the same steps because load_best_model_at_end requires save/eval alignment."
+ },
+ "checkpointing": {
+  "local_dir": "/content/checkpoints",
+  "drive_dir": "checkpoints",
+  "keep_last_on_drive": 2,
+  "method": "Trainer saves locally; a callback copies each finished checkpoint to a Drive staging folder, verifies SHA-256, writes FYP_CHECKPOINT_COMPLETE.json, then renames it to checkpoint-N. Resume restores the latest valid compatible checkpoint (and the best one) and calls trainer.train(resume_from_checkpoint=...) so optimizer, scheduler, RNG and global step continue.",
+  "min_total_vram_gib": 12,
+  "min_free_vram_gib": 11,
+  "vram_note": "Measured locally: one worst-case batch (16 x 512 source, 16 x 257 target tokens, fp32, forward+backward) peaked at ~9.4 GiB on CPU; a T4 reports ~14.7 GiB.",
+  "required_drive_free_gib": 1.0,
+  "storage_note": "~31.7 MB per checkpoint (fp32 adapter + AdamW states + state files); at most keep_last + best + one staging copy (~127 MB) on Drive, plus ~320 MB final export."
  },
  "inference": {
   "do_sample": true,
@@ -62,6 +76,8 @@
   "max_new_tokens": 256
  },
  "export": {
+  "final_dir": "final",
+  "final_note": "Export goes to <output>/final/ (must not exist), separate from <output>/checkpoints/.",
   "adapter_dir": "test_input_lora_adapter",
   "merged_dir": "test_input_generator_v1",
   "merge": "PeftModel.merge_and_unload() -> save_pretrained() (transformers 5.x always writes model.safetensors)",

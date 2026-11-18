@@ -299,6 +299,15 @@ class TrainingPinTests(unittest.TestCase):
         self.assertEqual(total, lora["expected_trainable_parameters"])
         self.assertEqual(lora["target_modules"], ["q", "k", "v", "o", "wi_0", "wi_1", "wo"])
 
+    def test_periodic_checkpoint_configuration(self):
+        t, c = self.config["training"], self.config["checkpointing"]
+        self.assertEqual((t["save_strategy"], t["eval_strategy"], t["save_steps"], t["eval_steps"]),
+                         ("steps", "steps", 500, 500))
+        self.assertEqual(t["save_steps"] % t["eval_steps"], 0)       # load_best_model_at_end alignment
+        self.assertEqual((c["drive_dir"], c["keep_last_on_drive"], c["local_dir"]),
+                         ("checkpoints", 2, "/content/checkpoints"))
+        self.assertEqual(self.config["export"]["final_dir"], "final")
+
     def test_fractional_warmup_resolves_as_documented(self):
         steps = math.ceil(47238 / 16) * 3
         self.assertEqual((steps, math.ceil(steps * 0.03)), (8859, 266))
@@ -317,7 +326,7 @@ class NotebookCompatibilityTests(unittest.TestCase):
     def test_install_and_version_guards_use_the_pins(self):
         self.assertIn("for name in ('transformers', 'accelerate', 'peft')", cell("# 2. Install"))
         self.assertIn("PINS[module.__name__]", cell("# 4. Model"))
-        guard = cell("# 1. Paths")
+        guard = cell("# 1. Mount")
         self.assertIn("CONFIG['runtime']['python_min']", guard)
         self.assertIn("assert CONFIG['base_model']['revision']", guard)
 
@@ -327,6 +336,42 @@ class NotebookCompatibilityTests(unittest.TestCase):
         self.assertIn("merge_and_unload()", export)
         self.assertIn("'model_safetensors_sha256': sha256(weights)", export)
         self.assertIn("'accelerate': accelerate.__version__", export)
+
+    def test_drive_mount_and_bundle_verification_come_first(self):
+        first = cell("# 1. Mount")
+        self.assertIn("drive.mount('/content/drive')", first)
+        self.assertIn("'/content/drive/MyDrive/FYP_AI_Training/test_input_v3_bundle'", first)
+        self.assertLess(first.index("verify_bundle(BUNDLE)"), first.index("CONFIG = json.loads"))
+        self.assertIn("sys.dont_write_bytecode = True", first)
+        self.assertIn("assert not FINAL.exists()", first)
+
+    def test_no_credentials_in_notebook(self):
+        text = "".join(notebook_sources()).lower()
+        for word in ("password", "api_key", "hf_token", "access_token", "auth_token", "credentials.json",
+                     "service_account", "@gmail"):
+            self.assertNotIn(word, text)
+
+    def test_gpu_preflight_runs_before_model_loading(self):
+        sources = notebook_sources()
+        gpu = next(i for i, s in enumerate(sources) if s.startswith("# 3b. GPU preflight"))
+        model_cell = next(i for i, s in enumerate(sources) if s.startswith("# 4. Model"))
+        self.assertLess(gpu, model_cell)
+        self.assertIn("gpu_preflight(torch, C['min_total_vram_gib'], C['min_free_vram_gib'])", sources[gpu])
+
+    def test_training_resumes_from_verified_drive_checkpoints(self):
+        train = cell("# 6. Train")
+        order = ["run_fingerprint(CONFIG, BUNDLE_MANIFEST)", "check_drive_space(",
+                 "restore_for_resume(DRIVE_CKPT, LOCAL_CKPT, FINGERPRINT)", "Seq2SeqTrainingArguments(",
+                 "make_drive_sync_callback(TrainerCallback", "trainer.train(resume_from_checkpoint="]
+        self.assertEqual([train.index(s) for s in order], sorted(train.index(s) for s in order))
+        self.assertIn("eval_steps=T['eval_steps'], save_steps=T['save_steps']", train)
+        self.assertIn("output_dir=str(LOCAL_CKPT)", train)
+
+    def test_export_goes_to_separate_final_folder(self):
+        export = cell("# 7. Export")
+        self.assertIn("FINAL.mkdir(parents=True)", export)
+        self.assertNotIn("OUT.mkdir", export)
+        self.assertIn("'run_fingerprint': FINGERPRINT", export)
 
     def test_round_trip_cell_still_present(self):
         self.assertIn("target_round_trip_failures(rows)", cell("# 5a. Target round-trip"))
@@ -377,7 +422,7 @@ class BundlePackagingTests(unittest.TestCase):
                 bundle = self.packager.package(data, out)
             self.assertEqual(sorted(bundle["files"]), sorted([
                 "train.jsonl", "validation_dev.jsonl", "manifest.json", "test_input_lora_config.json",
-                "test_input_lora.ipynb", "test_input_codec.py"]))
+                "test_input_lora.ipynb", "colab_training_utils.py", "test_input_codec.py"]))
             self.assertEqual(bundle["pins"]["packages"]["transformers"], "5.22.2")
             self.assertFalse((out / "validation_heldout.jsonl").exists())
             self.assertEqual((out / "test_input_lora.ipynb").read_bytes(), NOTEBOOK.read_bytes())
@@ -410,7 +455,13 @@ class BundlePackagingTests(unittest.TestCase):
             old_warmup = json.loads(json.dumps(notebook))
             old_warmup["cells"].append({"cell_type": "code", "source": ["f(warmup_ratio=0.03)"],
                                         "metadata": {}, "outputs": [], "execution_count": None})
-            for i, nb in enumerate((with_outputs, no_round_trip, old_warmup)):
+            no_resume = json.loads(json.dumps(notebook))
+            for c in no_resume["cells"]:
+                c["source"] = ["".join(c["source"]).replace("resume_from_checkpoint=", "x=")]
+            no_mount = json.loads(json.dumps(notebook))
+            for c in no_mount["cells"]:
+                c["source"] = ["".join(c["source"]).replace("drive.mount('/content/drive')", "pass")]
+            for i, nb in enumerate((with_outputs, no_round_trip, old_warmup, no_resume, no_mount)):
                 with self.assertRaises(SystemExit):
                     self.packager.check_training_files(good_cfg, write(f"bad{i}.ipynb", nb))
 
