@@ -3,8 +3,11 @@ Assemble (locally) the exact files the Colab notebook needs, for upload ONLY
 after approval G-A. Nothing is uploaded by this script.
 
 Bundle = train.jsonl, validation_dev.jsonl, manifest.json (hash-verified),
-training/test_input_lora_config.json, test_input_codec.py, BUNDLE_MANIFEST.json.
+training/test_input_lora_config.json (must be fully version-pinned),
+training/test_input_lora.ipynb (no outputs; target round-trip cell required),
+test_input_codec.py, BUNDLE_MANIFEST.json.
 validation_heldout / validation_problems / any test data are never included.
+An existing bundle folder is never overwritten (use a new versioned --out).
 
     python dev_tools/package_colab_bundle.py [--data data_prepared/test_input_v1] [--out DIR]
 """
@@ -17,20 +20,45 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data_prepared" / "test_input_v1"
-OUT = ROOT / "data_prepared" / "colab_bundle_test_input_v1"
+OUT = ROOT / "data_prepared" / "colab_bundle_test_input_v2"
 DATA_FILES = ("train.jsonl", "validation_dev.jsonl")
-EXTRA = (ROOT / "training" / "test_input_lora_config.json", ROOT / "test_input_codec.py")
+CONFIG = ROOT / "training" / "test_input_lora_config.json"
+NOTEBOOK = ROOT / "training" / "test_input_lora.ipynb"
+EXTRA = (CONFIG, NOTEBOOK, ROOT / "test_input_codec.py")
 FORBIDDEN = ("validation_heldout.jsonl", "validation_problems.jsonl")
+ROUND_TRIP_CELL = "# 5a. Target round-trip"
 
 
 def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def check_training_files(config_path=CONFIG, notebook_path=NOTEBOOK):
+    """The bundled config must be fully pinned and the notebook must be clean and consistent."""
+    config = json.loads(Path(config_path).read_text(encoding="utf-8"))
+    pins = config.get("pinned_packages") or {}
+    if not config["base_model"].get("revision") or \
+            not all(pins.get(p) for p in ("peft", "transformers", "accelerate")) or \
+            pins["peft"] != config.get("peft_version"):
+        raise SystemExit("REFUSED: training config is not fully version-pinned")
+    notebook = json.loads(Path(notebook_path).read_text(encoding="utf-8"))
+    sources = ["".join(c["source"]) for c in notebook["cells"]]
+    if any(c.get("outputs") for c in notebook["cells"]):
+        raise SystemExit("REFUSED: notebook contains outputs")
+    if not any(s.startswith(ROUND_TRIP_CELL) for s in sources):
+        raise SystemExit("REFUSED: notebook lacks the target round-trip cell")
+    if "warmup_ratio=" in "".join(sources):
+        raise SystemExit("REFUSED: notebook passes warmup_ratio (unsupported by the pinned transformers)")
+    return {"base_model": config["base_model"]["repo"], "revision": config["base_model"]["revision"],
+            "packages": {k: pins[k] for k in ("peft", "transformers", "accelerate")},
+            "runtime": config.get("runtime")}
+
+
 def package(data=DATA, out=OUT):
     data, out = Path(data), Path(out)
     if out.exists():
         raise SystemExit(f"REFUSED: {out} exists")
+    pins = check_training_files()
     manifest = json.loads((data / "manifest.json").read_text(encoding="utf-8"))
     for name in DATA_FILES:
         if sha256(data / name) != manifest["files"][name]["sha256"]:
@@ -49,7 +77,8 @@ def package(data=DATA, out=OUT):
         files[source.name] = {"sha256": sha256(target), "bytes": target.stat().st_size}
     assert not any((out / n).exists() for n in FORBIDDEN)
     bundle = {"purpose": "Colab LoRA training bundle (upload only after approval G-A)",
-              "files": files, "excluded": list(FORBIDDEN) + ["test split (never prepared)"]}
+              "pins": pins, "files": files,
+              "excluded": list(FORBIDDEN) + ["test split (never prepared)"]}
     (out / "BUNDLE_MANIFEST.json").write_text(json.dumps(bundle, indent=1), encoding="utf-8")
     return bundle
 

@@ -1,12 +1,23 @@
 {
  "name": "flan_t5_small_lora_test_input_v1",
- "status": "PREPARED - NOT RUN. Uploading data, installing peft and downloading the base model each need separate approval.",
+ "status": "PINNED - NOT RUN. Uploading data (G-A) and installing packages / downloading the base model in Colab (G-B) each need separate approval.",
  "base_model": {
   "repo": "google/flan-t5-small",
-  "revision": null,
-  "revision_note": "Set to the exact commit hash approved before training; the notebook refuses to run while null."
+  "revision": "0fc9ddf78a1e988dac52e2dac162b0ede4fd74ab",
+  "revision_note": "Hugging Face commit (lastModified 2023-10-10); config: 8+8 layers, d_model 512, 6 heads, d_kv 64, d_ff 1024, gated-gelu."
  },
- "peft_version": null,
+ "peft_version": "0.21.2",
+ "pinned_packages": {
+  "peft": "0.21.2",
+  "transformers": "5.22.2",
+  "accelerate": "1.15.0",
+  "note": "transformers 5.22.2 = local inference version (.venv_ai); peft 0.21.2 fixes encoder-decoder models on transformers>=5.18; Trainer needs accelerate>=1.1.0."
+ },
+ "runtime": {
+  "python_min": "3.11",
+  "torch_min": "2.6",
+  "torch_note": "Colab's preinstalled CUDA build is used (not reinstalled); its version is recorded in TRAINING_MANIFEST.json."
+ },
  "lora": {
   "task_type": "SEQ_2_SEQ_LM",
   "r": 16,
@@ -30,6 +41,7 @@
   "learning_rate": 0.001,
   "lr_scheduler_type": "linear",
   "warmup_ratio": 0.03,
+  "warmup_note": "transformers 5.22.2 has no warmup_ratio argument; the notebook passes it as warmup_steps=0.03, which get_warmup_steps resolves to ceil(total_steps * 0.03) (8859 steps -> 266).",
   "weight_decay": 0.0,
   "per_device_train_batch_size": 16,
   "per_device_eval_batch_size": 32,
@@ -52,7 +64,7 @@
  "export": {
   "adapter_dir": "test_input_lora_adapter",
   "merged_dir": "test_input_generator_v1",
-  "merge": "PeftModel.merge_and_unload() -> save_pretrained(safe_serialization=True)",
+  "merge": "PeftModel.merge_and_unload() -> save_pretrained() (transformers 5.x always writes model.safetensors)",
   "manifest": "TRAINING_MANIFEST.json with model_safetensors_sha256, dataset manifest sha256, config, library versions, GPU, losses, wall time",
   "local_install_path": "models/test_input_generator_v1 (git-ignored); loaded by ai_test_input_service.py with plain transformers (no peft)"
  },

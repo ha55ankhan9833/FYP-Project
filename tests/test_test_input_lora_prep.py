@@ -10,6 +10,7 @@ import contextlib
 import hashlib
 import io
 import json
+import math
 import sys
 import tempfile
 import types
@@ -246,6 +247,172 @@ class EvaluationLoaderTests(unittest.TestCase):
                     evaluator.main(["run", "--problems", str(problems), "--method", "model"])
                 loader.assert_not_called()
         self.assertIn("REFUSED", str(caught.exception))
+
+
+CONFIG_PATH = ROOT / "training" / "test_input_lora_config.json"
+# google/flan-t5-small config.json at the pinned revision.
+BASE_DIMS = {"d_model": 512, "d_kv": 64, "num_heads": 6, "d_ff": 1024, "layers": 8}
+
+
+def notebook_sources():
+    return ["".join(c["source"]) for c in json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]]
+
+
+def cell(prefix):
+    return next(s for s in notebook_sources() if s.startswith(prefix))
+
+
+class TrainingPinTests(unittest.TestCase):
+
+    def setUp(self):
+        self.config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+
+    def test_exact_pins(self):
+        self.assertEqual(self.config["base_model"]["repo"], "google/flan-t5-small")
+        self.assertEqual(self.config["base_model"]["revision"],
+                         "0fc9ddf78a1e988dac52e2dac162b0ede4fd74ab")
+        pins = self.config["pinned_packages"]
+        self.assertEqual({k: pins[k] for k in ("peft", "transformers", "accelerate")},
+                         {"peft": "0.21.2", "transformers": "5.22.2", "accelerate": "1.15.0"})
+        self.assertEqual(self.config["peft_version"], pins["peft"])
+        self.assertEqual(self.config["runtime"]["python_min"], "3.11")
+        self.assertEqual(self.config["runtime"]["torch_min"], "2.6")
+
+    def test_training_pin_matches_local_inference_transformers(self):
+        try:
+            import transformers
+        except ImportError:
+            self.skipTest("transformers is only in .venv_ai")
+        self.assertEqual(transformers.__version__, self.config["pinned_packages"]["transformers"])
+
+    def test_three_epoch_configuration_preserved(self):
+        t = self.config["training"]
+        self.assertEqual((t["num_train_epochs"], t["learning_rate"], t["warmup_ratio"],
+                          t["per_device_train_batch_size"], t["seed"]), (3, 0.001, 0.03, 16, 42))
+
+    def test_lora_parameter_count_matches_base_architecture(self):
+        lora, d = self.config["lora"], BASE_DIMS
+        inner = d["num_heads"] * d["d_kv"]
+        attn = 4 * lora["r"] * (d["d_model"] + inner)             # q, k, v, o
+        ffn = 3 * lora["r"] * (d["d_model"] + d["d_ff"])          # wi_0, wi_1, wo
+        total = d["layers"] * (attn + ffn) + d["layers"] * (2 * attn + ffn)
+        self.assertEqual(total, lora["expected_trainable_parameters"])
+        self.assertEqual(lora["target_modules"], ["q", "k", "v", "o", "wi_0", "wi_1", "wo"])
+
+    def test_fractional_warmup_resolves_as_documented(self):
+        steps = math.ceil(47238 / 16) * 3
+        self.assertEqual((steps, math.ceil(steps * 0.03)), (8859, 266))
+        self.assertIn("8859 steps -> 266", self.config["training"]["warmup_note"])
+
+
+class NotebookCompatibilityTests(unittest.TestCase):
+
+    def test_warmup_passed_as_fractional_warmup_steps(self):
+        train = cell("# 6. Train")
+        self.assertNotIn("warmup_ratio=", train)
+        self.assertIn("warmup_steps=T['warmup_ratio']", train)
+        self.assertIn("args.get_warmup_steps(total_steps)", train)
+        self.assertIn("num_train_epochs=T['num_train_epochs']", train)
+
+    def test_install_and_version_guards_use_the_pins(self):
+        self.assertIn("for name in ('transformers', 'accelerate', 'peft')", cell("# 2. Install"))
+        self.assertIn("PINS[module.__name__]", cell("# 4. Model"))
+        guard = cell("# 1. Paths")
+        self.assertIn("CONFIG['runtime']['python_min']", guard)
+        self.assertIn("assert CONFIG['base_model']['revision']", guard)
+
+    def test_export_uses_supported_save_api_and_records_versions(self):
+        export = cell("# 7. Export")
+        self.assertNotIn("safe_serialization", export)
+        self.assertIn("merge_and_unload()", export)
+        self.assertIn("'model_safetensors_sha256': sha256(weights)", export)
+        self.assertIn("'accelerate': accelerate.__version__", export)
+
+    def test_round_trip_cell_still_present(self):
+        self.assertIn("target_round_trip_failures(rows)", cell("# 5a. Target round-trip"))
+
+    def test_all_code_cells_parse(self):
+        import ast
+        cells = json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]
+        for c in cells:
+            if c["cell_type"] == "code":
+                ast.parse("".join(c["source"]))
+
+    def test_training_arguments_are_real_fields_of_pinned_transformers(self):
+        try:
+            import dataclasses
+            from transformers import Seq2SeqTrainingArguments
+        except ImportError:
+            self.skipTest("transformers is only in .venv_ai")
+        import ast
+        call = next(n for n in ast.walk(ast.parse(cell("# 6. Train")))
+                    if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "Seq2SeqTrainingArguments")
+        fields = {f.name for f in dataclasses.fields(Seq2SeqTrainingArguments)}
+        self.assertEqual([k.arg for k in call.keywords if k.arg not in fields], [])
+
+
+class BundlePackagingTests(unittest.TestCase):
+
+    def setUp(self):
+        from dev_tools import package_colab_bundle as packager
+        self.packager = packager
+
+    def _data_dir(self, root):
+        data = Path(root) / "data"
+        data.mkdir()
+        train = [{"problem_id": "P1", "split": "train", "subset": None, "target": "1"}]
+        dev = [{"problem_id": "P2", "split": "validation", "subset": "dev", "target": "2"}]
+        files = {}
+        for name, rows in (("train.jsonl", train), ("validation_dev.jsonl", dev)):
+            (data / name).write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+            files[name] = {"sha256": hashlib.sha256((data / name).read_bytes()).hexdigest()}
+        (data / "manifest.json").write_text(json.dumps({"files": files}), encoding="utf-8")
+        (data / "validation_heldout.jsonl").write_text("{}\n", encoding="utf-8")   # must never be copied
+        return data
+
+    def test_package_includes_pinned_config_and_notebook_and_never_overwrites(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data, out = self._data_dir(tmp), Path(tmp) / "bundle_v2"
+            with contextlib.redirect_stdout(io.StringIO()):
+                bundle = self.packager.package(data, out)
+            self.assertEqual(sorted(bundle["files"]), sorted([
+                "train.jsonl", "validation_dev.jsonl", "manifest.json", "test_input_lora_config.json",
+                "test_input_lora.ipynb", "test_input_codec.py"]))
+            self.assertEqual(bundle["pins"]["packages"]["transformers"], "5.22.2")
+            self.assertFalse((out / "validation_heldout.jsonl").exists())
+            self.assertEqual((out / "test_input_lora.ipynb").read_bytes(), NOTEBOOK.read_bytes())
+            with self.assertRaises(SystemExit):
+                self.packager.package(data, out)
+
+    def test_refuses_unpinned_config_or_unsafe_notebook(self):
+        config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        notebook = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
+        self.packager.check_training_files()                   # the committed files pass
+        with tempfile.TemporaryDirectory() as tmp:
+            def write(name, obj):
+                path = Path(tmp) / name
+                path.write_text(json.dumps(obj), encoding="utf-8")
+                return path
+            good_cfg, good_nb = write("c.json", config), write("n.ipynb", notebook)
+            bad_configs = []
+            for mutate in (lambda c: c["base_model"].update(revision=None),
+                           lambda c: c["pinned_packages"].update(accelerate=None),
+                           lambda c: c.update(peft_version="0.21.3")):
+                c = json.loads(json.dumps(config)); mutate(c); bad_configs.append(c)
+            for i, c in enumerate(bad_configs):
+                with self.assertRaises(SystemExit):
+                    self.packager.check_training_files(write(f"bad{i}.json", c), good_nb)
+            with_outputs = json.loads(json.dumps(notebook))
+            with_outputs["cells"][1]["outputs"] = [{"output_type": "stream", "text": "x"}]
+            no_round_trip = json.loads(json.dumps(notebook))
+            no_round_trip["cells"] = [c for c in no_round_trip["cells"]
+                                      if not "".join(c["source"]).startswith("# 5a.")]
+            old_warmup = json.loads(json.dumps(notebook))
+            old_warmup["cells"].append({"cell_type": "code", "source": ["f(warmup_ratio=0.03)"],
+                                        "metadata": {}, "outputs": [], "execution_count": None})
+            for i, nb in enumerate((with_outputs, no_round_trip, old_warmup)):
+                with self.assertRaises(SystemExit):
+                    self.packager.check_training_files(good_cfg, write(f"bad{i}.ipynb", nb))
 
 
 if __name__ == "__main__":
