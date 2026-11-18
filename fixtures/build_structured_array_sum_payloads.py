@@ -158,6 +158,30 @@ GATE_L_FINALIZE = {
 }
 
 
+# Live automatic-worker demo (approval pending for the writes).
+# Correct long long solution; teacher review fixed BEFORE the model runs:
+# Logic & Correctness 3.00/3.00 (reads N then N values, 64-bit total,
+# negatives and N = 1 handled), Code Quality 2.00/2.00 (clear names,
+# appropriate types). Test-case portion NOT RUN, not awarded -> 5.00/10.
+AUTO_STUDENT = "E2E-TEST-0004"
+AUTO_SUBMISSION_FILE = "auto_worker_submission.cpp"
+AUTO_FINALIZE = {
+    "final_score": "5.00",
+    "criteria": [
+        {"criterion_name": "Logic & Correctness", "marks": "3.00",
+         "comment": "Reads N and exactly N values into a 64-bit total; handles "
+                    "negative values and N = 1."},
+        {"criterion_name": "Code Quality", "marks": "2.00",
+         "comment": "Clear names and appropriate types; prints only the sum."},
+    ],
+    "instructor_feedback": (
+        "AUTOMATIC CODE REVIEW - NOT EXECUTED. No test cases were run on your "
+        "program, so the test-case portion was not awarded. Marks come from an "
+        "AI code review that your teacher checked: Logic & Correctness 3.00 of "
+        "3.00, Code Quality 2.00 of 2.00."),
+}
+
+
 def oracle(text):
     """Independent Python oracle: parse N, then exactly N integers; sum them."""
     lines = text.split("\n")
@@ -258,6 +282,17 @@ def main():
             "Gate L. Teacher BIIT235 approves the AI_ANALYSIS_UNVERIFIED "
             "evaluation with criterion marks; verified test marks are 0 (not "
             "run), so final_score must equal the criterion total."),
+        "12_auto_submission.json": request(
+            "POST", "/api/assessments/<new_id>/submissions",
+            {"file_name": AUTO_SUBMISSION_FILE,
+             "source_code": (OUT / AUTO_SUBMISSION_FILE).read_bytes().decode("utf-8")},
+            f"Live worker demo. Student {AUTO_STUDENT} token only; creates a "
+            "Submission and a PENDING GradingJob. Never compiled or executed."),
+        "13_auto_finalize.json": request(
+            "POST", "/api/submissions/<submission_id>/evaluation/finalize",
+            AUTO_FINALIZE,
+            "Live worker demo. Teacher BIIT235 approves criterion marks; no "
+            "verified test marks exist, so final_score = criterion total."),
         "planned_test_cases.json": {
             "note": "Exact inputs the structured generator selects for this "
                     "schema; expected outputs are from an independent Python "

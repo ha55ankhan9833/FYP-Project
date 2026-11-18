@@ -498,6 +498,54 @@ class DemoSetupStepTests(unittest.TestCase):
         with mock.patch.object(driver, "a6_submissions", lambda aid: rows[:1]):
             self.assertEqual(driver.l_rows(6, state), [])
 
+    def test_auto_demo_steps_are_write_gated(self):
+        for step in ("auto-submit", "auto-finalize"):
+            with self.assertRaises(driver.Stop):
+                driver.require_confirm(step, None)
+            driver.require_confirm(step, "FYP_E2E_Test")
+        for step in ("auto-preflight", "auto-wait", "auto-verify"):
+            driver.require_confirm(step, None)
+
+    def test_auto_demo_payloads_are_reviewed_and_honest(self):
+        src = driver.auto_source()
+        self.assertIn("SYNTHETIC E2E SUBMISSION", src["source_code"])
+        self.assertIn("long long total", src["source_code"])
+        self.assertNotIn("\r", src["source_code"])
+        body = json.loads((DATA / "13_auto_finalize.json").read_text(encoding="utf-8"))["body"]
+        self.assertEqual(set(body), {"final_score", "criteria", "instructor_feedback"})
+        self.assertEqual(sum(Decimal(c["marks"]) for c in body["criteria"]),
+                         Decimal(body["final_score"]))
+        self.assertEqual(Decimal(body["final_score"]), driver.AUTO_FINAL_SCORE)
+        self.assertIn("NOT EXECUTED", body["instructor_feedback"])
+
+    def test_auto_submit_refuses_when_other_jobs_are_open(self):
+        from unittest import mock
+        state = {"assessment_id": 6, "w3_submission_id": 6, "l_submission_id": 7}
+        rows = [(6, "E2E-TEST-0001", 5, "COMPLETED", 0, "m", "MANUALLY_GRADED"),
+                (7, "E2E-TEST-0002", 6, "COMPLETED", 1, "l", "AI_ANALYSIS_UNVERIFIED")]
+        with mock.patch.object(driver, "owned_assessment", lambda s: 6), \
+                mock.patch.object(driver, "a6_submissions", lambda aid: rows), \
+                mock.patch.object(driver, "open_jobs", lambda: [(9, 99, "PENDING")]):
+            with self.assertRaises(driver.Stop):
+                driver.step_auto_submit(None, state, student_api_factory=self.fail)
+
+    def test_auto_wait_follows_transitions_and_times_out(self):
+        from unittest import mock
+        states = iter([("PENDING", 0, None), ("PROCESSING", 1, "llm-analysis-loop-H"),
+                       ("COMPLETED", 1, "llm-analysis-loop-H")])
+        with mock.patch.object(driver, "job_row", lambda j: next(states)), \
+                mock.patch.object(driver, "step_l_report", lambda *a, **k: None):
+            driver.step_auto_wait(None, {"auto_job_id": 8}, sleep=lambda s: None)
+        with mock.patch.object(driver, "job_row", lambda j: ("COMPLETED", 1, "llm-analysis-e2e-H")), \
+                mock.patch.object(driver, "step_l_report", lambda *a, **k: None):
+            with self.assertRaises(driver.Stop):        # finished by the wrong (manual) runner
+                driver.step_auto_wait(None, {"auto_job_id": 8}, sleep=lambda s: None)
+        ticks = iter(range(0, 10000, 100))
+        with mock.patch.object(driver, "job_row", lambda j: ("PENDING", 0, None)):
+            with self.assertRaises(driver.Stop):
+                driver.step_auto_wait(None, {"auto_job_id": 8}, timeout=300,
+                                      clock=lambda: next(ticks), sleep=lambda s: None)
+
     def test_values_published_in_the_statement_are_not_leaks(self):
         tests = [(2, "1\n-1000000000\n", "-1000000000\n"), (3, "2\n7 9\n", "1234567\n")]
         fmt = payloads.ASSESSMENT["input_format"]

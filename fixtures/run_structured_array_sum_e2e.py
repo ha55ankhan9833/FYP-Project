@@ -790,17 +790,17 @@ def step_l_submit(api, state, student_api_factory=student_api):
                          "attempt_count": attempts, "evaluation": evaluation})
 
 
-def l_teacher_view(api, state):
-    sid = state.get("l_submission_id")
+def l_teacher_view(api, state, key="l_submission_id"):
+    sid = state.get(key)
     if not sid:
-        raise Stop("Run l-submit first")
+        raise Stop(f"No {key} recorded; run the submit step first")
     _, data = api.call("GET", f"/api/submissions/{sid}/evaluation")
     return data["submission"]
 
 
-def step_l_report(api, state):
+def step_l_report(api, state, key="l_submission_id"):
     owned_assessment(state)
-    sub = l_teacher_view(api, state)
+    sub = l_teacher_view(api, state, key)
     ev = sub.get("evaluation") or {}
     report = ev.get("evaluation_report") or {}
     tests = report.get("test_execution") or {}
@@ -906,13 +906,198 @@ def step_l_verify(api, state, student_api_factory=student_api):
     print("l-verify: OK")
 
 
+# ------------------------------------------ live automatic-worker demo
+
+AUTO_STUDENT = "E2E-TEST-0004"
+AUTO_SOURCE_FILE = DATA / "auto_worker_submission.cpp"
+AUTO_SOURCE_HASH = "e5dd6317588d8d565e4f0daa7deaaad27fe80a5c9a8b7acb6d0e81549c4fcb4b"
+AUTO_WORKER_PREFIX = "llm-analysis-loop-"
+AUTO_FINAL_SCORE = Decimal("5.00")
+WRITE_STEPS |= {"auto-submit", "auto-finalize"}
+
+
+def auto_source():
+    raw = AUTO_SOURCE_FILE.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != AUTO_SOURCE_HASH:
+        raise Stop("Worker-demo source differs from the reviewed bytes")
+    payload = body("12_auto_submission.json")
+    if payload["source_code"].encode("utf-8") != raw:
+        raise Stop("12_auto_submission.json does not match the reviewed source")
+    return payload
+
+
+def open_jobs():
+    """Every job any worker could claim (whole E2E database)."""
+    return [tuple(r) for r in sql(
+        "SELECT job_id, submission_id, job_status FROM dbo.GradingJob "
+        "WHERE job_status IN ('PENDING', 'PROCESSING') ORDER BY job_id")]
+
+
+def expected_prior(state):
+    return [(state.get("w3_submission_id"), W3_STUDENT),
+            (state.get("l_submission_id"), L_STUDENT)]
+
+
+def step_auto_preflight(api, state):
+    """Read-only: the demo job will be the ONLY job the worker can pick."""
+    aid = owned_assessment(state)
+    require_ten_tests(aid)
+    auto_source()
+    rows = a6_submissions(aid)
+    checks = {
+        "no open (PENDING/PROCESSING) jobs anywhere": open_jobs() == [],
+        "A6 submissions are only W3 + Gate L": [(r[0], r[1]) for r in rows]
+        == expected_prior(state),
+        f"{AUTO_STUDENT} has no A6 submission": all(r[1] != AUTO_STUDENT for r in rows),
+        "rubric criteria 3 + 4 in place": get_rubric(api, aid)["rubric_complete"],
+        "assigned only to SEC000001": [s["section_id"] for s in get_sections(api, aid)]
+        == [SECTION_ID],
+    }
+    _, status = api.call("GET", "/api/grading/status")
+    llm = status.get("llm_analysis") or {}
+    checks["Ollama + qwen2.5-coder:3b available"] = bool(
+        llm.get("ollama_available") and llm.get("model_available"))
+    checks["student execution disabled"] = status.get("student_execution_enabled") is False
+    print("teacher status llm_analysis:", json.dumps(llm, indent=1))
+    for name, ok in checks.items():
+        print(f"  {'OK  ' if ok else 'FAIL'} {name}")
+    if not all(checks.values()):
+        raise Stop("auto-preflight failed")
+    print("auto-preflight: OK")
+
+
+def step_auto_submit(api, state, student_api_factory=student_api):
+    aid = owned_assessment(state)
+    payload = auto_source()
+    rows = a6_submissions(aid)
+    mine = [r for r in rows if r[1] == AUTO_STUDENT]
+    if mine:
+        if state.get("auto_submission_id") == mine[0][0]:
+            print("auto-submit already complete:", mine[0])
+            return
+        raise Stop(f"{AUTO_STUDENT} already has an unrecorded submission: {mine}")
+    if [(r[0], r[1]) for r in rows] != expected_prior(state) or open_jobs():
+        raise Stop("Queue or submissions are not in the expected demo state")
+    sapi = student_api_factory(AUTO_STUDENT)
+    _, data = sapi.call("POST", f"/api/assessments/{aid}/submissions", payload)
+    sid = data["submission"]["submission_id"]
+    mine = [r for r in a6_submissions(aid) if r[1] == AUTO_STUDENT]
+    if len(mine) != 1 or mine[0][0] != sid:
+        raise Stop(f"Unexpected state after submit: {mine}")
+    state["auto_submission_id"], state["auto_job_id"] = sid, mine[0][2]
+    save_state(state)
+    print("submitted (no worker command needed):", mine[0])
+
+
+def job_row(job_id):
+    rows = sql("SELECT job_status, attempt_count, worker_id FROM dbo.GradingJob "
+               "WHERE job_id = ?", job_id)
+    return tuple(rows[0]) if rows else None
+
+
+def step_auto_wait(api, state, timeout=900, poll=5, clock=None, sleep=None):
+    """Read-only: watch the job the running worker picks up by itself."""
+    import time
+    clock, sleep = clock or time.monotonic, sleep or time.sleep
+    job_id = state.get("auto_job_id")
+    if not job_id:
+        raise Stop("Run auto-submit first")
+    seen, start = [], clock()
+    while True:
+        row = job_row(job_id)
+        if row and (not seen or seen[-1] != row[0]):
+            seen.append(row[0])
+            print(f"  job {job_id}: {row[0]} (attempt {row[1]}, worker {row[2]})")
+        if row and row[0] in ("COMPLETED", "FAILED"):
+            break
+        if clock() - start > timeout:
+            raise Stop(f"Worker did not finish job {job_id} within {timeout}s: {seen}")
+        sleep(poll)
+    if row[0] != "COMPLETED" or not (row[2] or "").startswith(AUTO_WORKER_PREFIX):
+        raise Stop(f"Job ended as {row}, not COMPLETED by the loop worker")
+    print("transitions observed:", seen)
+    step_l_report(api, state, key="auto_submission_id")
+
+
+def step_auto_finalize(api, state):
+    owned_assessment(state)
+    sid = state.get("auto_submission_id")
+    sub = l_teacher_view(api, state, "auto_submission_id")
+    ev = sub.get("evaluation") or {}
+    payload = body("13_auto_finalize.json")
+    if ev.get("result_status") == "FINALIZED":
+        if _dec(ev.get("final_score")) != _dec(payload["final_score"]):
+            raise Stop("Already finalized with a different score")
+        print("auto-finalize already complete")
+    else:
+        if ev.get("auto_evaluation_status") != L_AUTO_STATUS:
+            raise Stop("Evaluation is not an AI_ANALYSIS_UNVERIFIED evaluation")
+        if sum(Decimal(c["marks"]) for c in payload["criteria"]) != Decimal(payload["final_score"]):
+            raise Stop("final_score must equal the approved criterion total")
+        _, data = api.call("POST", f"/api/submissions/{sid}/evaluation/finalize", payload)
+        print("finalize response:", data["evaluation"])
+    ev = l_teacher_view(api, state, "auto_submission_id")["evaluation"]
+    approval = ev["evaluation_report"]["teacher_approval"]
+    print("teacher approval:", json.dumps(approval, indent=1, default=str))
+    if approval["status"] != "APPROVED_FINAL" or len(ev["teacher_criteria"]) != 2:
+        raise Stop("Teacher approval was not recorded as expected")
+
+
+def step_auto_verify(api, state, student_api_factory=student_api):
+    aid = owned_assessment(state)
+    sid = state.get("auto_submission_id")
+    if not sid:
+        raise Stop("Run auto-submit first")
+    tests = [tuple(r) for r in sql(
+        "SELECT test_number, input_data, expected_output FROM dbo.TestCase "
+        "WHERE assessment_id = ? ORDER BY test_number", aid)]
+    published = "\n".join(v or "" for v in sql(
+        "SELECT problem_statement, input_format, output_format FROM dbo.Assessment "
+        "WHERE assessment_id = ?", aid)[0])
+    expected = {W3_STUDENT: ("MANUALLY_GRADED", W3_FINAL_SCORE),
+                L_STUDENT: ("CODE_REVIEWED_NOT_EXECUTED", Decimal("3.00")),
+                AUTO_STUDENT: ("CODE_REVIEWED_NOT_EXECUTED", AUTO_FINAL_SCORE)}
+    checks = {}
+    for student in E2E_STUDENTS:
+        sapi = student_api_factory(student)
+        status, mine = sapi.call("GET", f"/api/student/assessments/{aid}/submission",
+                                 ok=(200, 404))
+        _, listing = sapi.call("GET", "/api/student/assessments")
+        teacher_status, _ = sapi.call("GET", f"/api/submissions/{sid}/evaluation",
+                                      ok=(200, 403, 404))
+        checks[f"{student}: no hidden data"] = not hidden_leaks([mine, listing], tests, published)
+        checks[f"{student}: teacher evaluation route 403"] = teacher_status == 403
+        result = ((mine or {}).get("submission") or {}).get("result") or {}
+        if student in expected:
+            outcome, score = expected[student]
+            checks[f"{student}: {outcome} {score}"] = (
+                status == 200 and result.get("outcome") == outcome
+                and _dec(result.get("final_score")) == score)
+        else:
+            checks[f"{student}: no submission (404)"] = status == 404
+        if student == AUTO_STUDENT:
+            print(f"{student} result:", json.dumps(result, indent=1))
+            checks[f"{student}: no test counts, teacher-approved criteria"] = (
+                result.get("tests_run") is None and result.get("test_marks") is None
+                and result.get("rubric_source") == "TEACHER_APPROVED"
+                and "NOT EXECUTED" in (result.get("instructor_feedback") or ""))
+    for name, ok in checks.items():
+        print(f"  {'OK  ' if ok else 'FAIL'} {name}")
+    if not all(checks.values()):
+        raise Stop("auto-verify failed")
+    print("auto-verify: OK")
+
+
 STEPS = {"check": step_check, "draft": step_draft, "assessment": step_assessment,
          "reference": step_reference, "generate": step_generate, "verify": step_verify,
          "rubric": step_rubric, "assign": step_assign, "teacher-view": step_teacher_view,
          "student-view": step_student_view, "w3-submit": step_w3_submit,
          "w3-manual-grade": step_w3_manual_grade, "w3-verify": step_w3_verify,
          "l-submit": step_l_submit, "l-report": step_l_report,
-         "l-finalize": step_l_finalize, "l-verify": step_l_verify}
+         "l-finalize": step_l_finalize, "l-verify": step_l_verify,
+         "auto-preflight": step_auto_preflight, "auto-submit": step_auto_submit,
+         "auto-wait": step_auto_wait, "auto-finalize": step_auto_finalize,
+         "auto-verify": step_auto_verify}
 
 
 def main():

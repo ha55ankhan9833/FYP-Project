@@ -255,6 +255,36 @@ class StatusTests(unittest.TestCase):
         self.assertIsNone(r.get_json()["llm_analysis"])
 
 
+class ScopeTests(unittest.TestCase):
+
+    def test_assessment_scope_is_passed_to_the_candidate_query(self):
+        seen = {}
+
+        class Cur:
+            def execute(self, sql, params):
+                seen["sql"], seen["params"] = " ".join(sql.split()), params
+
+            def fetchall(self):
+                return [(5, 9, "src")]
+
+        class Conn:
+            def cursor(self):
+                return Cur()
+
+            def rollback(self):
+                pass
+
+            def close(self):
+                pass
+        rows = w.load_candidates(connection_factory=Conn, assessment_id=6)
+        self.assertEqual(seen["params"], (3, 6, 6))
+        self.assertIn("AND (? IS NULL OR x.assessment_id = ?)", seen["sql"])
+        self.assertEqual(rows, [{"job_id": 5, "submission_id": 9,
+                                 "source_sha256": w.source_sha256("src")}])
+        w.load_candidates(connection_factory=Conn)
+        self.assertEqual(seen["params"], (3, None, None))     # unscoped by default
+
+
 class RunnerTests(unittest.TestCase):
 
     def test_12_protected_hashes_cover_existing_verified_path(self):

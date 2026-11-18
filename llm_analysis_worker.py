@@ -52,7 +52,10 @@ CANDIDATES_SQL = f"""
 SELECT TOP ({CANDIDATE_LIMIT}) j.job_id, j.submission_id, s.source_code
 FROM dbo.GradingJob AS j
 INNER JOIN dbo.Submission AS s ON s.submission_id = j.submission_id
+INNER JOIN dbo.AssessmentSection AS x
+    ON x.assessment_section_id = s.assessment_section_id
 WHERE j.attempt_count < ?
+  AND (? IS NULL OR x.assessment_id = ?)
   AND (j.job_status = 'PENDING'
        OR (j.job_status = 'PROCESSING' AND j.lease_expires_at < SYSUTCDATETIME()))
   AND NOT EXISTS (SELECT 1 FROM dbo.Evaluation AS e
@@ -113,12 +116,13 @@ def cached_health(ttl=10, check=check_ollama, clock=time.monotonic):
 # Job selection (read-only) and one cycle
 # ----------------------------------------------------------------------
 
-def load_candidates(connection_factory=None):
+def load_candidates(connection_factory=None, assessment_id=None):
+    """assessment_id (optional) scopes the worker to one assessment."""
     from db import get_connection
     conn = (connection_factory or get_connection)()
     try:
         cursor = conn.cursor()
-        cursor.execute(CANDIDATES_SQL, (MAX_ATTEMPTS,))
+        cursor.execute(CANDIDATES_SQL, (MAX_ATTEMPTS, assessment_id, assessment_id))
         return [{"job_id": int(r[0]), "submission_id": int(r[1]),
                  "source_sha256": source_sha256(r[2])} for r in cursor.fetchall()]
     finally:

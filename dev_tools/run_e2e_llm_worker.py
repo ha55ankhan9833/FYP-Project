@@ -15,6 +15,7 @@ PENDING for dev_tools/fixture_submission_grader.py.
 """
 
 import argparse
+import functools
 import json
 import logging
 import signal
@@ -51,7 +52,12 @@ def main():
     parser = argparse.ArgumentParser(description="Automatic LLM-analysis worker (E2E)")
     parser.add_argument("--check", action="store_true", help="read-only preflight")
     parser.add_argument("--interval", type=int, default=worker.POLL_SECONDS)
+    parser.add_argument("--assessment-id", type=int,
+                        help="only process jobs of this assessment (demo scoping)")
     args = parser.parse_args()
+    if args.assessment_id is not None and args.assessment_id <= 0:
+        sys.exit("REFUSED: --assessment-id must be positive")
+    candidates = functools.partial(worker.load_candidates, assessment_id=args.assessment_id)
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -64,8 +70,9 @@ def main():
 
     if args.check:
         health = worker.check_ollama()
-        job, skipped = worker.choose_job(worker.load_candidates(), hashes)
+        job, skipped = worker.choose_job(candidates(), hashes)
         print(json.dumps({"database": db.database_name(), "health": health,
+                          "assessment_scope": args.assessment_id,
                           "protected_fixture_hashes": len(hashes),
                           "would_process_job": job and {k: job[k] for k in ("job_id", "submission_id")},
                           "skipped_verified_fixture_jobs": [s["job_id"] for s in skipped]},
@@ -78,10 +85,13 @@ def main():
     stop = threading.Event()
     signal.signal(signal.SIGINT, lambda *_: stop.set())     # Ctrl+C: finish cycle, exit
     worker_id = default_worker_id()
-    logging.info("LLM-analysis worker %s on %s (poll %ss, %d protected fixture hashes)",
-                 worker_id, db.database_name(), args.interval, len(hashes))
+    logging.info("LLM-analysis worker %s on %s (poll %ss, assessment scope %s, "
+                 "%d protected fixture hashes)", worker_id, db.database_name(),
+                 args.interval, args.assessment_id or "all", len(hashes))
+    cycle = functools.partial(worker.run_cycle, candidates=candidates)
     cycles = worker.run_loop(worker_id, db.database_name(), hashes, stop_event=stop,
-                             poll=args.interval)
+                             poll=args.interval,
+                             cycle=lambda wid, hs: cycle(wid, hs))
     logging.info("worker stopped after %d cycles", cycles)
 
 
