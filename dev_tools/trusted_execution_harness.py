@@ -66,6 +66,12 @@ FIXTURE_ASSESSMENTS = {
     "array_sum_int_accumulator": 6,
 }
 
+# Database holding the fixture's assessment (read-only access). Assessment 6
+# exists only in the isolated E2E copy; None keeps the application default.
+FIXTURE_DATABASES = {
+    "array_sum_int_accumulator": "FYP_E2E_Test",
+}
+
 RUN_TIMEOUT_SECONDS = 2
 MAX_STDOUT_CHARS = 64 * 1024
 MAX_STDERR_CHARS = 4 * 1024
@@ -260,7 +266,8 @@ def describe_plan(key):
                     f"cwd = build folder; env = SystemRoot + PATH(compiler bin, "
                     f"System32) only; stdout cap {MAX_STDOUT_CHARS} chars",
         "tests": f"10 hidden test cases of Assessment {assessment_for(key)}, "
-                 f"loaded read-only",
+                 f"loaded read-only from "
+                 f"{FIXTURE_DATABASES.get(key) or 'the application database'}",
     }
 
 
@@ -277,6 +284,11 @@ def main():
         return
 
     assessment_id = assessment_for(args.fixture)
+    database = FIXTURE_DATABASES.get(args.fixture)
+    if database:
+        import db
+        db.select_database(database)
+        print(f"reading Assessment {assessment_id} tests read-only from {db.database_name()}")
     tests, test_alloc = (load_assessment_5() if assessment_id == ASSESSMENT_ID
                          else load_assessment(assessment_id))
     try:

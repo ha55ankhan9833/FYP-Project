@@ -334,8 +334,12 @@ class IsolationTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(teh.fixture_path(key).read_bytes())
                              .hexdigest(), digest)
 
-    def test_approval_file_still_empty(self):
-        self.assertEqual(teh.load_approvals(), {})
+    def test_approval_file_holds_only_owner_approved_entries(self):
+        # Gate V V1 (2026-11-18) approved exactly one A6 fixture; the A5
+        # fixtures' one-time approvals were removed after their runs.
+        self.assertEqual(teh.load_approvals(), {
+            "array_sum_int_accumulator":
+                "ac95167f7e4acc460199f96df3325ba85501d2efdd585fb380cd4f1848e0d6f4"})
 
 
 if __name__ == "__main__":

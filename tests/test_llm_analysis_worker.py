@@ -295,8 +295,10 @@ class RunnerTests(unittest.TestCase):
             self.assertIn(record["fixture_sha256"], hashes)
         extra = runner.protected_hashes(approvals={"k": "ABC"}, records={})
         self.assertEqual(extra, frozenset({"abc"}))
-        # The Gate L int-accumulator fixture is NOT approved, so it is not protected.
-        self.assertNotIn("ac95167f7e4acc460199f96df3325ba85501d2efdd585fb380cd4f1848e0d6f4", hashes)
+        # Gate V approved the A6 int-accumulator fixture: it is now protected.
+        self.assertIn("ac95167f7e4acc460199f96df3325ba85501d2efdd585fb380cd4f1848e0d6f4", hashes)
+        # Unapproved, unrecorded sources (e.g. the worker-demo solution) are not.
+        self.assertNotIn("e5dd6317588d8d565e4f0daa7deaaad27fe80a5c9a8b7acb6d0e81549c4fcb4b", hashes)
 
 
 if __name__ == "__main__":

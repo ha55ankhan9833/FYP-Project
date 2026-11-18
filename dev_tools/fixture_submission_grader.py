@@ -301,7 +301,10 @@ def main():
         sys.exit("REFUSED: a production sandbox is configured; let the "
                  "production worker grade real submissions")
 
-    plan = build_plan(args.submission_id)
+    try:
+        plan = build_plan(args.submission_id)
+    except (SubmissionNotEligible, reg.RecordIntegrityError) as error:
+        sys.exit(f"REFUSED: {error}")
     print(json.dumps({k: v for k, v in plan.items() if k != "_report"},
                      indent=2, default=str))
     if not args.grade:

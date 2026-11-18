@@ -182,6 +182,29 @@ AUTO_FINALIZE = {
 }
 
 
+# Gate V5 teacher decision, written AFTER reviewing the verified report
+# (6/10 recorded tests, 3.00 test marks; Qwen suggested 2.00 + 1.00).
+# Same rubric marks as the identical Gate L source (consistency):
+# final = verified test marks 3.00 + rubric 1.50 + 1.50 = 6.00.
+GATE_V_FINALIZE = {
+    "final_score": "6.00",
+    "criteria": [
+        {"criterion_name": "Logic & Correctness", "marks": "1.50",
+         "comment": "Input handling and loop are correct, but the int accumulator "
+                    "overflows: verified failures on 4 of 10 tests (3, 6, 7, 10)."},
+        {"criterion_name": "Code Quality", "marks": "1.50",
+         "comment": "Readable and well structured; the sum needs a 64-bit type "
+                    "(long long). The overflow itself is marked under correctness."},
+    ],
+    "instructor_feedback": (
+        "Your program was graded with verified test results: 6 of 10 hidden tests "
+        "passed (3.00 of 5.00 test marks). The failures come from storing the sum "
+        "in an int, which overflows for large sums; use long long. Rubric marks "
+        "(teacher-approved): Logic & Correctness 1.50 of 3.00, Code Quality 1.50 "
+        "of 2.00. Final mark: 6.00 of 10.00."),
+}
+
+
 def oracle(text):
     """Independent Python oracle: parse N, then exactly N integers; sum them."""
     lines = text.split("\n")
@@ -293,6 +316,11 @@ def main():
             AUTO_FINALIZE,
             "Live worker demo. Teacher BIIT235 approves criterion marks; no "
             "verified test marks exist, so final_score = criterion total."),
+        "14_gate_v_finalize.json": request(
+            "POST", "/api/submissions/<submission_id>/evaluation/finalize",
+            GATE_V_FINALIZE,
+            "Gate V5. Teacher BIIT235, written after reviewing the verified report: "
+            "final_score = verified test marks 3.00 + approved criteria."),
         "planned_test_cases.json": {
             "note": "Exact inputs the structured generator selects for this "
                     "schema; expected outputs are from an independent Python "

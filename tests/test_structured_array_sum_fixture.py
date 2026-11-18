@@ -546,6 +546,25 @@ class DemoSetupStepTests(unittest.TestCase):
                 driver.step_auto_wait(None, {"auto_job_id": 8}, timeout=300,
                                       clock=lambda: next(ticks), sleep=lambda s: None)
 
+    def test_gate_v_steps_are_write_gated_and_source_pinned(self):
+        for step in ("v-submit", "v-finalize"):
+            with self.assertRaises(driver.Stop):
+                driver.require_confirm(step, None)
+            driver.require_confirm(step, "FYP_E2E_Test")
+        for step in ("v-preflight", "v-report", "v-verify"):
+            driver.require_confirm(step, None)
+        src = driver.v_source()["source_code"].encode("utf-8")
+        import hashlib as h
+        self.assertEqual(h.sha256(src).hexdigest(),
+                         "ac95167f7e4acc460199f96df3325ba85501d2efdd585fb380cd4f1848e0d6f4")
+
+    def test_gate_v_finalize_requires_teacher_review_file(self):
+        from unittest import mock
+        with mock.patch.object(driver, "owned_assessment", lambda s: 6), \
+                mock.patch.object(driver, "body", side_effect=OSError("missing")):
+            with self.assertRaisesRegex(driver.Stop, "teacher review first"):
+                driver.step_v_finalize(None, {"v_submission_id": 9})
+
     def test_values_published_in_the_statement_are_not_leaks(self):
         tests = [(2, "1\n-1000000000\n", "-1000000000\n"), (3, "2\n7 9\n", "1234567\n")]
         fmt = payloads.ASSESSMENT["input_format"]

@@ -1088,6 +1088,195 @@ def step_auto_verify(api, state, student_api_factory=student_api):
     print("auto-verify: OK")
 
 
+# ----------------------------- Gate V4-V5: verified (recorded) grading
+
+V_STUDENT = "E2E-TEST-0003"
+V_FIXTURE = "array_sum_int_accumulator"
+V_REPORT_SHA = "c3b33890a4ff046470c77bfdc6b264a76f6d9fce209da4367414c84b7b722b05"
+V_FAILED = [3, 6, 7, 10]
+V_TEST_MARKS = Decimal("3.00")
+V_FINALIZE_FILE = "14_gate_v_finalize.json"
+WRITE_STEPS |= {"v-submit", "v-finalize"}
+
+
+def v_source():
+    raw = L_FIXTURE_FILE.read_bytes()                  # the same reviewed fixture file
+    if hashlib.sha256(raw).hexdigest() != L_SOURCE_HASH:
+        raise Stop("Gate V fixture differs from the approved bytes")
+    return {"file_name": L_FIXTURE_FILE.name, "source_code": raw.decode("utf-8")}
+
+
+def v_prior(state):
+    return expected_prior(state) + [(state.get("auto_submission_id"), AUTO_STUDENT)]
+
+
+def step_v_preflight(api, state):
+    from dev_tools import recorded_evidence_grading as reg
+    from dev_tools import trusted_execution_harness as teh
+    import grading_test_case_loader
+    aid = owned_assessment(state)
+    require_ten_tests(aid)
+    v_source()
+    rows = a6_submissions(aid)
+    report, report_sha = reg.read_record(V_FIXTURE)
+    summary = reg.verify_record(V_FIXTURE, report, report_sha,
+                                grading_test_case_loader.load_grading_test_cases(aid),
+                                teh.fixture_sha256(V_FIXTURE), Decimal("5.00"))
+    _, status = api.call("GET", "/api/grading/status")
+    checks = {
+        "fixture approved, hash ac95167f...": teh.load_approvals().get(V_FIXTURE) == L_SOURCE_HASH,
+        "report hash c3b33890...": report_sha == V_REPORT_SHA,
+        "evidence verifies vs stored tests: 6/10, fails 3,6,7,10, 3.00": (
+            summary["tests_passed"], summary["failed_test_numbers"],
+            summary["recorded_test_score"]) == (6, V_FAILED, "3.00"),
+        "no open jobs anywhere": open_jobs() == [],
+        "A6 submissions = W3 + Gate L + worker demo": [(r[0], r[1]) for r in rows] == v_prior(state),
+        f"{V_STUDENT} has no A6 submission": all(r[1] != V_STUDENT for r in rows),
+        "rubric criteria 3 + 4 complete": get_rubric(api, aid)["rubric_complete"],
+        "assigned only to SEC000001": [s["section_id"] for s in get_sections(api, aid)] == [SECTION_ID],
+        "backend on FYP_E2E_Test, execution disabled": status.get("active_database") == REQUIRED_DATABASE
+        and status.get("student_execution_enabled") is False,
+    }
+    for name, ok in checks.items():
+        print(f"  {'OK  ' if ok else 'FAIL'} {name}")
+    if not all(checks.values()):
+        raise Stop("v-preflight failed")
+    print("v-preflight: OK")
+
+
+def step_v_submit(api, state, student_api_factory=student_api):
+    from dev_tools import run_e2e_llm_worker as runner
+    import llm_analysis_worker as worker
+    aid = owned_assessment(state)
+    payload = v_source()
+    rows = a6_submissions(aid)
+    mine = [r for r in rows if r[1] == V_STUDENT]
+    if mine:
+        if state.get("v_submission_id") == mine[0][0]:
+            print("v-submit already complete:", mine[0])
+            return
+        raise Stop(f"{V_STUDENT} already has an unrecorded submission: {mine}")
+    if [(r[0], r[1]) for r in rows] != v_prior(state) or open_jobs():
+        raise Stop("Queue or submissions are not in the expected state")
+    sapi = student_api_factory(V_STUDENT)
+    _, data = sapi.call("POST", f"/api/assessments/{aid}/submissions", payload)
+    sid = data["submission"]["submission_id"]
+    mine = [r for r in a6_submissions(aid) if r[1] == V_STUDENT]
+    if len(mine) != 1 or mine[0][0] != sid or mine[0][3] != "PENDING" or mine[0][6] is not None:
+        raise Stop(f"Unexpected state after submit: {mine}")
+    stored = sql("SELECT source_code FROM dbo.Submission WHERE submission_id = ?", sid)[0][0]
+    stored_hash = hashlib.sha256(stored.encode("utf-8")).hexdigest()
+    job, skipped = worker.choose_job(worker.load_candidates(assessment_id=aid),
+                                     runner.protected_hashes())
+    state["v_submission_id"], state["v_job_id"] = sid, mine[0][2]
+    save_state(state)
+    print("submitted:", mine[0])
+    print("stored source hash matches approved fixture:", stored_hash == L_SOURCE_HASH)
+    print("LLM worker would pick:", job, "| skips:", [s["job_id"] for s in skipped])
+    if stored_hash != L_SOURCE_HASH or job is not None or [s["job_id"] for s in skipped] != [mine[0][2]]:
+        raise Stop("Stored source or worker routing is not as expected")
+
+
+def step_v_report(api, state):
+    owned_assessment(state)
+    sub = l_teacher_view(api, state, "v_submission_id")
+    ev = sub.get("evaluation") or {}
+    report = ev.get("evaluation_report") or {}
+    tests = report.get("test_execution") or {}
+    checks = {
+        "auto status COMPLETED/NEEDS_REVIEW": ev.get("auto_evaluation_status") in ("COMPLETED", "NEEDS_REVIEW"),
+        "stored tests 6/10": (ev.get("tests_passed"), ev.get("tests_run")) == (6, 10),
+        "verified test marks 3.00": _dec(ev.get("verified_test_marks")) == V_TEST_MARKS,
+        "report mode VERIFIED_EXECUTION": report.get("evaluation_mode") == "VERIFIED_EXECUTION",
+        "evidence basis trusted_fixture_recorded": report.get("evidence_basis") == "trusted_fixture_recorded",
+        "report tests VERIFIED, fails 3,6,7,10": tests.get("status") == "VERIFIED"
+        and tests.get("failed_test_numbers") == V_FAILED and tests.get("tests_passed") == 6,
+        "report test marks 3.00": _dec((report.get("suggested_marks") or {}).get("test_marks")) == V_TEST_MARKS,
+        "recorded-evidence label present (teacher only)":
+            "RECORDED execution evidence" in (ev.get("auto_evaluation_feedback") or ""),
+    }
+    print(json.dumps({k: report.get(k) for k in (
+        "evaluation_mode", "evidence_basis", "test_execution", "logic_analysis", "rubric",
+        "suggested_marks", "reliability_flags", "teacher_approval")}, indent=1))
+    for name, ok in checks.items():
+        print(f"  {'OK  ' if ok else 'FAIL'} {name}")
+    if not all(checks.values()):
+        raise Stop("v-report verification failed")
+    print("v-report: OK")
+
+
+def step_v_finalize(api, state):
+    owned_assessment(state)
+    sid = state.get("v_submission_id")
+    try:
+        payload = body(V_FINALIZE_FILE)
+    except OSError:
+        raise Stop(f"{V_FINALIZE_FILE} not written yet (teacher review first)")
+    rubric = sum(Decimal(c["marks"]) for c in payload["criteria"])
+    if V_TEST_MARKS + rubric != Decimal(payload["final_score"]):
+        raise Stop("final_score must equal verified test marks 3.00 + approved criteria")
+    ev = l_teacher_view(api, state, "v_submission_id")["evaluation"]
+    if ev.get("result_status") == "FINALIZED":
+        if _dec(ev.get("final_score")) != _dec(payload["final_score"]):
+            raise Stop("Already finalized with a different score")
+        print("v-finalize already complete")
+    else:
+        _, data = api.call("POST", f"/api/submissions/{sid}/evaluation/finalize", payload)
+        print("finalize response:", data["evaluation"])
+    ev = l_teacher_view(api, state, "v_submission_id")["evaluation"]
+    approval = ev["evaluation_report"]["teacher_approval"]
+    print("teacher approval:", json.dumps(approval, indent=1, default=str))
+    if approval["status"] != "APPROVED_FINAL" or len(ev["teacher_criteria"]) != 2 \
+            or _dec(ev["verified_test_marks"]) != V_TEST_MARKS:
+        raise Stop("Teacher approval was not recorded as expected")
+
+
+def step_v_verify(api, state, student_api_factory=student_api):
+    aid = owned_assessment(state)
+    sid = state.get("v_submission_id")
+    if not sid:
+        raise Stop("Run v-submit first")
+    final = _dec(body(V_FINALIZE_FILE)["final_score"])
+    tests = [tuple(r) for r in sql(
+        "SELECT test_number, input_data, expected_output FROM dbo.TestCase "
+        "WHERE assessment_id = ? ORDER BY test_number", aid)]
+    published = "\n".join(v or "" for v in sql(
+        "SELECT problem_statement, input_format, output_format FROM dbo.Assessment "
+        "WHERE assessment_id = ?", aid)[0])
+    expected = {W3_STUDENT: ("MANUALLY_GRADED", W3_FINAL_SCORE),
+                L_STUDENT: ("CODE_REVIEWED_NOT_EXECUTED", Decimal("3.00")),
+                AUTO_STUDENT: ("CODE_REVIEWED_NOT_EXECUTED", AUTO_FINAL_SCORE),
+                V_STUDENT: ("GRADED", final)}
+    checks = {}
+    for student in E2E_STUDENTS:
+        sapi = student_api_factory(student)
+        status, mine = sapi.call("GET", f"/api/student/assessments/{aid}/submission",
+                                 ok=(200, 404))
+        _, listing = sapi.call("GET", "/api/student/assessments")
+        checks[f"{student}: no hidden data"] = not hidden_leaks([mine, listing], tests, published)
+        for path in (f"/api/submissions/{sid}/evaluation", f"/api/assessments/{aid}/test-cases",
+                     f"/api/assessments/{aid}/submissions", "/api/grading/status"):
+            code, _ = sapi.call("GET", path, ok=(200, 403, 404))
+            checks[f"{student}: 403 on {path}"] = code == 403
+        result = ((mine or {}).get("submission") or {}).get("result") or {}
+        outcome, score = expected[student]
+        checks[f"{student}: {outcome} {score}"] = (status == 200 and result.get("outcome") == outcome
+                                                   and _dec(result.get("final_score")) == score)
+        if student == V_STUDENT:
+            print(f"{student} result:", json.dumps(result, indent=1))
+            checks[f"{student}: verified tests 6/10 = 3.00 shown separately from rubric"] = (
+                (result.get("tests_passed"), result.get("tests_run")) == (6, 10)
+                and _dec(result.get("test_marks")) == V_TEST_MARKS
+                and result.get("rubric_source") == "TEACHER_APPROVED"
+                and _dec(result.get("rubric_marks")) == final - V_TEST_MARKS
+                and any("6 of 10 hidden tests passed" in s for s in result.get("summary", [])))
+    for name, ok in checks.items():
+        print(f"  {'OK  ' if ok else 'FAIL'} {name}")
+    if not all(checks.values()):
+        raise Stop("v-verify failed")
+    print("v-verify: OK")
+
+
 STEPS = {"check": step_check, "draft": step_draft, "assessment": step_assessment,
          "reference": step_reference, "generate": step_generate, "verify": step_verify,
          "rubric": step_rubric, "assign": step_assign, "teacher-view": step_teacher_view,
@@ -1097,7 +1286,10 @@ STEPS = {"check": step_check, "draft": step_draft, "assessment": step_assessment
          "l-finalize": step_l_finalize, "l-verify": step_l_verify,
          "auto-preflight": step_auto_preflight, "auto-submit": step_auto_submit,
          "auto-wait": step_auto_wait, "auto-finalize": step_auto_finalize,
-         "auto-verify": step_auto_verify}
+         "auto-verify": step_auto_verify,
+         "v-preflight": step_v_preflight, "v-submit": step_v_submit,
+         "v-report": step_v_report, "v-finalize": step_v_finalize,
+         "v-verify": step_v_verify}
 
 
 def main():

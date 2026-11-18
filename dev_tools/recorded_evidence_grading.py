@@ -74,6 +74,15 @@ REVIEWED_RECORDS = {
         "report_sha256": "f70d5fa665e79faae02d434fbaf2270517f3e3dd9e58e753991d5cc7a04838b8",
         "fixture_sha256": "89b1c9ebfe88c7d8d61a9a5301289fcd0e871a21d40f9768f127ef9a7231b1e1",
         "compile_status": "COMPILATION_FAILED", "passed": None, "failed_tests": None},
+    # Gate V (owner-approved V1-V3, 2026-11-18): ONE run of the reviewed
+    # Assessment 6 fixture against A6's 10 stored tests (FYP_E2E_Test).
+    # Reviewed: compiled cleanly; 10/10 completed with exit 0 and no stderr;
+    # the 4 failures print exactly the 32-bit wrapped sum (int overflow).
+    "array_sum_int_accumulator": {
+        "report": "trusted_execution_array_sum_int_accumulator_20261118_222332.json",
+        "report_sha256": "c3b33890a4ff046470c77bfdc6b264a76f6d9fce209da4367414c84b7b722b05",
+        "fixture_sha256": "ac95167f7e4acc460199f96df3325ba85501d2efdd585fb380cd4f1848e0d6f4",
+        "compile_status": "COMPILED", "passed": 6, "failed_tests": [3, 6, 7, 10]},
 }
 
 RUN_STATUSES = {"completed", "runtime_error", "timeout"}
@@ -200,6 +209,13 @@ def verify_record(key, report, report_sha256, tests, fixture_sha256,
 def read_record(key):
     reviewed = REVIEWED_RECORDS[key]
     path = REPORTS / reviewed["report"]
+    if not path.exists():
+        # Reports are git-ignored: a clean checkout has the pins, not the
+        # evidence. Never treat that as verified.
+        raise RecordIntegrityError(
+            f"{key}: recorded evidence {reviewed['report']} is missing; verified "
+            f"grading is unavailable until it is restored "
+            f"(dev_tools/verified_evidence.py restore <backup dir>)")
     raw = path.read_bytes()
     return json.loads(raw.decode("utf-8")), hashlib.sha256(raw).hexdigest()
 
@@ -364,10 +380,13 @@ def run(keys):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--fixture", choices=["all", *REVIEWED_RECORDS],
-                        default="all")
+    # This preview harness replays against Assessment 5's tests and rubric
+    # context only; other assessments' records are graded through
+    # fixture_submission_grader with their own assessment data.
+    a5_keys = [k for k in REVIEWED_RECORDS if teh.assessment_for(k) == teh.ASSESSMENT_ID]
+    parser.add_argument("--fixture", choices=["all", *a5_keys], default="all")
     args = parser.parse_args()
-    keys = list(REVIEWED_RECORDS) if args.fixture == "all" else [args.fixture]
+    keys = a5_keys if args.fixture == "all" else [args.fixture]
     report = run(keys)
 
     for key, r in report["runs"].items():

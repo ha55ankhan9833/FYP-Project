@@ -268,18 +268,18 @@ class StatusHookTests(unittest.TestCase):
 
 class FixturePolicyTests(unittest.TestCase):
 
-    def test_a6_fixture_is_bound_to_assessment_6_and_not_approved(self):
+    def test_a6_fixture_is_bound_to_assessment_6(self):
+        # Approval and the reviewed record (Gate V, V1-V3) are covered by
+        # tests/test_gate_v_record.py; a record never verifies garbage.
         from dev_tools import recorded_evidence_grading as reg
         from dev_tools import trusted_execution_harness as teh
         self.assertEqual(teh.assessment_for("array_sum_int_accumulator"), 6)
         self.assertEqual({teh.assessment_for(k) for k in
                           ("prime_correct", "prime_buggy_square", "prime_compile_error")}, {5})
-        self.assertNotIn("array_sum_int_accumulator", teh.load_approvals())
-        with self.assertRaises(teh.NotApproved):
-            teh.require_approval("array_sum_int_accumulator")
-        self.assertNotIn("array_sum_int_accumulator", reg.REVIEWED_RECORDS)
         with self.assertRaises(reg.RecordIntegrityError):
             reg.verify_record("array_sum_int_accumulator", {}, "x", [], "y", "5")
+        with self.assertRaises(reg.RecordIntegrityError):
+            reg.verify_record("not_a_fixture", {}, "x", [], "y", "5")
 
     def test_fixture_grader_rejects_cross_assessment_submissions(self):
         from dev_tools import fixture_submission_grader as fsg

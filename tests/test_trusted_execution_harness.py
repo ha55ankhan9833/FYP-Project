@@ -94,8 +94,12 @@ class FixtureTests(unittest.TestCase):
         for key, digest in PINNED.items():
             self.assertEqual(teh.fixture_sha256(key), digest, key)
 
-    def test_approval_file_ships_empty(self):
-        self.assertEqual(teh.load_approvals(), {})
+    def test_approval_file_holds_only_the_gate_v_fixture(self):
+        self.assertEqual(teh.load_approvals(), {
+            "array_sum_int_accumulator":
+                "ac95167f7e4acc460199f96df3325ba85501d2efdd585fb380cd4f1848e0d6f4"})
+        for key in ("prime_correct", "prime_buggy_square", "prime_compile_error"):
+            self.assertNotIn(key, teh.load_approvals())
 
 
 class ExecutionTests(unittest.TestCase):
