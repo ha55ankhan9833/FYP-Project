@@ -1,0 +1,10 @@
+{
+  "method": "POST",
+  "path": "/api/ai/drafts",
+  "body": {
+    "problem": "Write a C++17 program that reads an integer N followed by N integers and prints their sum.",
+    "input_format": "The first line contains one integer N (1 <= N <= 100). The second line contains N integers A1 ... AN separated by single spaces (-1000000000 <= Ai <= 1000000000).",
+    "output_format": "Print the sum A1 + A2 + ... + AN as a decimal integer followed by a newline. Print nothing else."
+  },
+  "notes": "Teacher BIIT235 JWT; FYP_E2E_Test backend only. Requires ai_local_api.py on 127.0.0.1:5001. Every AI suggestion is then rejected and only VALUE_RULE is added by the teacher."
+}

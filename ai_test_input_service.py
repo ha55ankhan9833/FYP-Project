@@ -48,11 +48,12 @@ def status():
     return {"mode": TEST_INPUT_AI_MODE, "available": True, "reason": None}
 
 
-def _verify_weights():
-    manifest = json.loads((MODEL_DIR / MANIFEST_NAME).read_text(encoding="utf-8"))
+def _verify_weights(model_dir=MODEL_DIR):
+    model_dir = Path(model_dir)
+    manifest = json.loads((model_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
     expected = manifest.get("model_safetensors_sha256")
     digest = hashlib.sha256()
-    with open(MODEL_DIR / "model.safetensors", "rb") as handle:
+    with open(model_dir / "model.safetensors", "rb") as handle:
         for block in iter(lambda: handle.read(1 << 20), b""):
             digest.update(block)
     if not expected or digest.hexdigest() != expected:
@@ -60,15 +61,15 @@ def _verify_weights():
     return manifest
 
 
-@lru_cache(maxsize=1)
-def _load():
-    manifest = _verify_weights()
+@lru_cache(maxsize=2)
+def _load(model_dir=str(MODEL_DIR)):
+    manifest = _verify_weights(model_dir)
     import torch
     from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
     del torch  # imported to fail early with a clear error if torch is missing
-    tokenizer = AutoTokenizer.from_pretrained(str(MODEL_DIR))
-    model = AutoModelForSeq2SeqLM.from_pretrained(str(MODEL_DIR))
+    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_dir)
     model.eval()
     return tokenizer, model, manifest
 
@@ -78,6 +79,32 @@ def generate_raw_candidates(problem, count):
     state = status()
     if not state["available"]:
         raise ModelUnavailable(state["reason"])
+    return _generate(problem, count, MODEL_DIR)
+
+
+def evaluation_generator(model_dir=None):
+    """
+    EVALUATION ONLY (dev_tools/evaluate_test_inputs.py --method model).
+
+    Loads a locally available merged model after verifying its weights
+    against TRAINING_MANIFEST.json, WITHOUT reading or changing
+    TEST_INPUT_AI_MODE: the live suggestion endpoint stays disabled.
+    Returns generate(problem, count, seed=None) -> same shape as
+    generate_raw_candidates. Raises ModelUnavailable when the folder,
+    manifest or weights are missing or the hash does not match.
+    """
+    model_dir = Path(model_dir or MODEL_DIR).resolve()
+    if not (model_dir / MANIFEST_NAME).is_file() or not (model_dir / "model.safetensors").is_file():
+        raise ModelUnavailable(f"No trained test-input model in {model_dir}")
+    _verify_weights(model_dir)            # fail before any heavy import
+
+    def generate(problem, count, seed=None):
+        return _generate(problem, count, model_dir, seed=seed)
+
+    return generate
+
+
+def _generate(problem, count, model_dir, seed=None):
     try:
         prompt = build_generation_prompt(problem.get("problem_statement"), problem.get("input_format"),
                                          problem.get("output_format"), problem.get("value_constraints"),
@@ -85,8 +112,11 @@ def generate_raw_candidates(problem, count):
     except CodecError as error:
         raise ValueError(f"Cannot build the model prompt: {error}") from error
 
-    tokenizer, model, manifest = _load()
+    tokenizer, model, manifest = _load(str(model_dir))
     import torch
+
+    if seed is not None:
+        torch.manual_seed(seed)
 
     encoded = tokenizer(prompt, return_tensors="pt", truncation=False)
     input_tokens = int(encoded["input_ids"].shape[1])

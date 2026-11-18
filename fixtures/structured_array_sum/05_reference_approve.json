@@ -1,0 +1,8 @@
+{
+  "method": "POST",
+  "path": "/api/assessments/<new_id>/reference-solution/approve",
+  "body": {
+    "source_hash": "4ea30854b29ac9ceafe7392c71a8e5ca039d98fe91ce86137654a2567c0d8e40"
+  },
+  "notes": "Teacher confirms the reviewed bytes. Approval does NOT run code."
+}

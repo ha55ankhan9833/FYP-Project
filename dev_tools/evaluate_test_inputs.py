@@ -1,7 +1,9 @@
 """
 Evaluate a test-INPUT generator on VALIDATION problems (never the test split).
 
-    run           baseline (now) or model (after training) on validation_problems.jsonl
+    run           baseline (now) or model (after training) on validation_problems.jsonl;
+                  --method model loads a local hash-verified merged model for this
+                  evaluation only (the live TEST_INPUT_AI_MODE stays "off")
     schema-check  coverage and gold-input agreement of the conservative schema
                   inference on a split of the ORIGINAL dataset (train or validation)
 
@@ -79,13 +81,22 @@ def boundary(schema, valid_texts):
     return hits
 
 
-def candidates_for(method, row, count, seed):
+def candidates_for(method, row, count, seed, model=None):
     if method == "baseline":
         result = generate_candidates(row["_schema"], row["sample_input"], count=count, seed=seed)
         return [c["input"] for c in result["candidates"]], result["rejected"]
-    import ai_test_input_service as ai
-    raw = ai.generate_raw_candidates(row, count)
+    # model: an evaluation-only generator from ai_test_input_service.evaluation_generator
+    # (hash-verified local model; TEST_INPUT_AI_MODE is neither read nor changed).
+    raw = model(row, count, seed=seed)
     return [t for t in raw["texts"] if t is not None], [None] * sum(t is None for t in raw["texts"])
+
+
+def load_model(model_dir):
+    import ai_test_input_service as ai
+    try:
+        return ai.evaluation_generator(model_dir)
+    except ai.ModelUnavailable as error:
+        raise SystemExit(f"MODEL UNAVAILABLE: {error}") from error
 
 
 def run(args):
@@ -98,6 +109,7 @@ def run(args):
         rows = [r for r in rows if r["subset"] == args.subset]
     if args.limit:
         rows = rows[:args.limit]
+    model = load_model(args.model_dir) if args.method == "model" else None
 
     per_problem = []
     for row in rows:
@@ -114,7 +126,7 @@ def run(args):
         item["gold_accepted"] = sum(validate_input(schema, g)["valid"] for g in gold)
         item["gold_total"] = len(gold)
         start = time.perf_counter()
-        texts, rejected = candidates_for(args.method, row, args.count, args.seed)
+        texts, rejected = candidates_for(args.method, row, args.count, args.seed, model)
         item["latency_s"] = round(time.perf_counter() - start, 4)
         checks = [validate_input(schema, t) for t in texts]
         item["candidates"] = len(texts)
@@ -221,6 +233,9 @@ def main(argv=None):
     r.add_argument("--seed", type=int, default=42)
     r.add_argument("--limit", type=int)
     r.add_argument("--out")
+    r.add_argument("--model-dir", help="merged model folder for --method model "
+                                       "(default models/test_input_generator_v1); "
+                                       "its weights must match TRAINING_MANIFEST.json")
     s = sub.add_parser("schema-check")
     s.add_argument("--original", required=True)
     s.add_argument("--split", choices=["train", "validation"], default="train")

@@ -26,6 +26,7 @@ from test_case_validator import validate_generated_test_cases
 from test_input_generator import generate_integer_test_inputs
 
 FACTORIAL_HASH = "53b7d425901f831aae4dae9bfaeab839de9ec51415f319ce4943f43b07893993"
+ARRAY_SUM_HASH = "4ea30854b29ac9ceafe7392c71a8e5ca039d98fe91ce86137654a2567c0d8e40"
 UNTRUSTED_HASH = "f" * 64
 
 
@@ -158,9 +159,10 @@ class TrustPolicyTests(unittest.TestCase):
             self.assertEqual(gen_service.load_trusted_reference_hashes(
                 Path(d) / "missing.json"), gen_service.TRUSTED_REFERENCE_HASHES)
 
-    def test_allowlist_contains_only_owner_approved_factorial(self):
+    def test_allowlist_contains_only_owner_approved_references(self):
+        # Factorial (built-in) + array-sum structured E2E reference (S2, 2026-11-18).
         self.assertEqual(gen_service.load_trusted_reference_hashes(),
-                         frozenset({FACTORIAL_HASH}))
+                         frozenset({FACTORIAL_HASH, ARRAY_SUM_HASH}))
         source = (Path(BACKEND) / "fixtures/reference_solutions/"
                   "prime_check_reference.cpp").read_bytes()
         with self.assertRaisesRegex(ValueError, "not been reviewed"):
