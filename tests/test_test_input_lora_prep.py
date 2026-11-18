@@ -373,6 +373,37 @@ class NotebookCompatibilityTests(unittest.TestCase):
         self.assertNotIn("OUT.mkdir", export)
         self.assertIn("'run_fingerprint': FINGERPRINT", export)
 
+    def _run_install_cell(self, torchao_version):
+        import importlib.metadata as md
+        try:
+            import packaging.version  # noqa: F401  (present in Colab and .venv_ai)
+        except ImportError:
+            self.skipTest("packaging is only in .venv_ai / Colab")
+        calls = []
+
+        def fake_version(name):
+            if name == "torchao" and torchao_version is not None:
+                return torchao_version
+            raise md.PackageNotFoundError(name)
+        pins = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))["pinned_packages"]
+        with patch("subprocess.check_call", side_effect=lambda cmd: calls.append(cmd[3:]) or 0), \
+                patch("importlib.metadata.version", side_effect=fake_version), \
+                contextlib.redirect_stdout(io.StringIO()):
+            exec(compile(cell("# 2. Install"), "cell-2", "exec"), {"sys": sys, "PINS": pins})
+        return calls
+
+    def test_install_cell_removes_incompatible_preinstalled_torchao(self):
+        calls = self._run_install_cell("0.10.0")
+        self.assertEqual(calls[0], ["uninstall", "-y", "-q", "torchao"])
+        self.assertEqual(calls[1], ["install", "-q", "transformers==5.22.2", "accelerate==1.15.0",
+                                    "peft==0.21.2"])
+        for version in (None, "0.16.0", "0.17.1"):
+            self.assertEqual(self._run_install_cell(version),
+                             [["install", "-q", "transformers==5.22.2", "accelerate==1.15.0", "peft==0.21.2"]])
+
+    def test_model_cell_refuses_incompatible_torchao(self):
+        self.assertIn("REFUSED: incompatible torchao still installed", cell("# 4. Model"))
+
     def test_round_trip_cell_still_present(self):
         self.assertIn("target_round_trip_failures(rows)", cell("# 5a. Target round-trip"))
 
