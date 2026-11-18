@@ -140,7 +140,9 @@ class EvaluationRouteTests(unittest.TestCase):
         self.assertEqual(m.call_args[0], (4, "S123"))
 
     def test_grading_status_reports_disabled(self):
-        r = self.client.get("/api/grading/status", headers=auth("teacher"))
+        import llm_analysis_worker
+        with patch.object(llm_analysis_worker, "status_snapshot", return_value=None):
+            r = self.client.get("/api/grading/status", headers=auth("teacher"))
         self.assertEqual(r.status_code, 200)
         self.assertFalse(r.get_json()["student_execution_enabled"])
 

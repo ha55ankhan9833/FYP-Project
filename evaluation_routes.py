@@ -160,10 +160,19 @@ def grading_status():
         return _error("Teacher access required", 403)
     from secure_execution_gate import describe_sandbox_status
     from db import database_name
+    # Automatic LLM-analysis readiness: Ollama/model availability, queue
+    # counts (no student data) and the worker heartbeat when observable.
+    try:
+        from llm_analysis_worker import status_snapshot
+        llm_analysis = status_snapshot(database_name())
+    except Exception:
+        logger.exception("LLM analysis status unavailable")
+        llm_analysis = None
     # active_database lets development tools refuse to write when the
     # backend is not running against the isolated E2E test database.
     return jsonify({"status": "success", **describe_sandbox_status(),
-                    "active_database": database_name()}), 200
+                    "active_database": database_name(),
+                    "llm_analysis": llm_analysis}), 200
 
 
 # ---------------------------- student ---------------------------------

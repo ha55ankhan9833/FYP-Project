@@ -107,7 +107,10 @@ def describe_sandbox_status():
         "reason": None if sandbox else (
             "No verified isolated sandbox. Firmware virtualization is "
             "disabled on the host, so container/VM isolation is "
-            "unavailable. Grading jobs stay PENDING."
+            "unavailable, and student C++ is never compiled or run. Jobs "
+            "stay PENDING for execution-based grading; the opt-in LLM "
+            "analysis worker may instead review the source code only "
+            "(no test results), always pending teacher approval."
         )
     }
 

@@ -12,6 +12,8 @@
 *.p12
 # Login tokens written by fixtures/*_login.py for the E2E driver.
 dev_tools/.tokens/
+# Local worker heartbeat (llm_analysis_worker)
+dev_tools/.runtime/
 *.token
 
 # --- Python environments and caches ----------------------------------
