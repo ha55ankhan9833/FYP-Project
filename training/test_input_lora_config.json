@@ -1,0 +1,66 @@
+{
+ "name": "flan_t5_small_lora_test_input_v1",
+ "status": "PREPARED - NOT RUN. Uploading data, installing peft and downloading the base model each need separate approval.",
+ "base_model": {
+  "repo": "google/flan-t5-small",
+  "revision": null,
+  "revision_note": "Set to the exact commit hash approved before training; the notebook refuses to run while null."
+ },
+ "peft_version": null,
+ "lora": {
+  "task_type": "SEQ_2_SEQ_LM",
+  "r": 16,
+  "lora_alpha": 32,
+  "lora_dropout": 0.05,
+  "bias": "none",
+  "target_modules": ["q", "k", "v", "o", "wi_0", "wi_1", "wo"],
+  "expected_trainable_parameters": 2555904,
+  "expected_trainable_note": "Computed from the T5-small config (d_model 512, inner 384, d_ff 1024, 8 encoder + 8 decoder layers); confirm with print_trainable_parameters()."
+ },
+ "data": {
+  "train_file": "train.jsonl",
+  "eval_file": "validation_dev.jsonl",
+  "never_uploaded": ["validation_heldout.jsonl", "validation_problems.jsonl", "any test-split data"],
+  "max_source_tokens": 512,
+  "max_target_tokens": 256,
+  "truncation": "none - rows over the limits were removed by dev_tools/build_test_input_dataset.py"
+ },
+ "training": {
+  "seed": 42,
+  "learning_rate": 0.001,
+  "lr_scheduler_type": "linear",
+  "warmup_ratio": 0.03,
+  "weight_decay": 0.0,
+  "per_device_train_batch_size": 16,
+  "per_device_eval_batch_size": 32,
+  "gradient_accumulation_steps": 1,
+  "num_train_epochs": 3,
+  "precision": "fp32 (T5 is unstable in fp16; T4 has no bf16)",
+  "eval_strategy": "epoch",
+  "save_strategy": "epoch",
+  "load_best_model_at_end": true,
+  "metric_for_best_model": "eval_loss",
+  "save_total_limit": 2
+ },
+ "inference": {
+  "do_sample": true,
+  "top_p": 0.95,
+  "temperature": 0.9,
+  "num_return_sequences": 16,
+  "max_new_tokens": 256
+ },
+ "export": {
+  "adapter_dir": "test_input_lora_adapter",
+  "merged_dir": "test_input_generator_v1",
+  "merge": "PeftModel.merge_and_unload() -> save_pretrained(safe_serialization=True)",
+  "manifest": "TRAINING_MANIFEST.json with model_safetensors_sha256, dataset manifest sha256, config, library versions, GPU, losses, wall time",
+  "local_install_path": "models/test_input_generator_v1 (git-ignored); loaded by ai_test_input_service.py with plain transformers (no peft)"
+ },
+ "evaluation": {
+  "tool": "dev_tools/evaluate_test_inputs.py run --method model",
+  "tuning": "validation dev subset only",
+  "report": "validation heldout subset; compared with the deterministic baseline",
+  "metrics": ["schema supported rate", "candidate syntax / constraint / semantic validity", "distinct ratio", "mean pairwise edit distance", "scalar min / max coverage", "identical-to-gold rate", "latency"],
+  "test_split": "evaluated once at the end only with separate approval"
+ }
+}

@@ -168,6 +168,40 @@ any other foreign-key conflict.
 | POST | `/api/assessments/<id>/generate-test-cases/oracle` **NEW** | Teacher only. Body `{oracle_id, additional_inputs?, dry_run? (default true)}` — **no expected outputs accepted**. Outputs are computed server-side by a reviewed oracle in `verified_oracles.py` that is bound to the assessment's APPROVED reference hash and checked by two independent algorithms. Same preflight and atomic save as the C++ path. `dry_run:true` → 200 preview with `test_cases` (teacher only); `dry_run:false` → 201 saved. 400 unknown oracle / wrong reference / constraints outside verified domain · 404 not owner · 409 tests already exist. |
 | GET | `/api/assessments/<id>/test-cases` | Teacher only. Includes hidden inputs/outputs. The `marks` column is display-only; grading always uses **equal weight**. |
 
+## Teacher — test-input suggestions (NEW, 2026-11-18)
+
+These endpoints are **teacher only**.
+- **Nothing is saved.** No route writes to the database or produces expected outputs.
+- **Nothing is executed.** No compiler is invoked and no code runs.
+- **Results are candidates, not test cases.** Every candidate has `status: "CANDIDATE"`. The teacher passes chosen inputs to `generate-test-cases`, where approval, reference execution and the exactly-10 rule still apply.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/test-inputs/suggestions` | Body `{problem: {problem_statement, input_format?, output_format?, value_constraints?, sample_input?}, input_schema?, method? ("deterministic_baseline" default \| "model"), count? (1–50, default 20), seed?}`. 200 `{data: {supported, schema_source, shape, input_schema, generation, candidates[], rejected[], additional_inputs, note}}`. |
+| POST | `/api/assessments/<id>/test-inputs/suggestions` | Body `{sample_input?, input_schema?, method?, count?, seed?}`. Reads the owned assessment's statement and value constraints (one SELECT); 404 if the teacher does not own it. `data.additional_inputs` is filled only when the value constraints use the legacy 1–3 integer form (`supported, slots, structural_inputs, suggested`). `suggested` has already been checked against the real 10-case rule and can be sent as `additional_inputs` to `generate-test-cases`. |
+| POST | `/api/test-inputs/validate` | Body `{problem? , input_schema?, inputs: [1–50 strings]}`. 200 `{data: {schema_source, shape, valid_count, results: [{index, valid, syntax_valid, constraints_valid, semantic_valid, duplicate_of, errors[]}]}}`. |
+
+**Schema source**, tried in this order:
+1. an explicit `input_schema`;
+2. the legacy integer grammar of `value_constraints`;
+3. conservative inference from `sample_input`: one line of scalars; a count line plus an array; a single string with a stated length and character set; a graph or tree with a stated direction; multi-test lines of scalars.
+
+**`input_schema`** (version 1) declares `variables` (integer ranges), then `items`, then optional `relations`:
+- **Items:** `ints`, `array` (with `distinct` and `order`), `string` (with `charset` or `chars`), `grid`, `edges` and `repeat`.
+- **Edges must state every graph property:** `directed`, `self_loops`, `multi_edges` and `connected`. `tree` is optional.
+
+**Errors.** All use the shared error body.
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `INVALID_REQUEST` | Bad field types, unknown fields or bad limits |
+| 400 | `INVALID_INPUT_SCHEMA` | The `input_schema` is malformed |
+| 422 | `UNSUPPORTED_INPUT_FORMAT` | The format is not supported. Includes `reasons[]`; unknown formats are never treated as valid |
+| 503 | `AI_MODEL_UNAVAILABLE` | `method: "model"` was requested while `TEST_INPUT_AI_MODE = "off"`, the default |
+| 401 / 403 | — | JWT missing / caller is not a teacher |
+
+**Validation results** report three layers separately: `syntax`, `constraints` and `semantic`. The semantic layer covers rules such as distinct or sorted arrays, graph rules and variable relations.
+
 ## Teacher — submissions & evaluation review (NEW)
 
 ### `GET /api/assessments/<id>/submissions`

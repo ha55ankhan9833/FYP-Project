@@ -44,6 +44,9 @@ build/
 fyp_cpp_build_*/
 fyp_*_build_*/
 
+# --- Prepared AI training/evaluation data (derived from the dataset) --
+data_prepared/
+
 # --- Generated reports (contain hidden test inputs / outputs) ---------
 dev_tools/reports/
 reports/

@@ -25,6 +25,9 @@ app = Flask(__name__)
 from test_case_routes import test_case_bp
 app.register_blueprint(test_case_bp)
 
+from test_input_suggestion_routes import test_input_bp
+app.register_blueprint(test_input_bp)
+
 # JWT Configuration
 secret_key = os.getenv("JWT_SECRET_KEY")
 
