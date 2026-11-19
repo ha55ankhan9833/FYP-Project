@@ -38,6 +38,14 @@ class TeacherNotFoundError(ValueError):
     """The token's teacher_id is not in Teacher_Export."""
 
 
+class SectionNotFoundError(ValueError):
+    """Section missing, or not in the requested semester/session."""
+
+
+class SectionAccessDeniedError(PermissionError):
+    """The teacher is not allocated to this section for this course."""
+
+
 TEACHER_SQL = """
 SELECT teacher_id, teacher_name, department
 FROM dbo.Teacher_Export
@@ -75,6 +83,46 @@ WHERE se.semester_no = ?
         AND sct.course_no  COLLATE DATABASE_DEFAULT = ? COLLATE DATABASE_DEFAULT)
 ORDER BY se.program, se.section_name, se.section_id;
 """
+
+
+SECTION_ACCESS_SQL = """
+SELECT
+    se.section_id,
+    se.section_name,
+    se.program,
+    se.semester_no,
+    se.academic_session,
+    CASE WHEN EXISTS (
+        SELECT 1
+        FROM dbo.SectionCourseTeacher AS sct
+        WHERE sct.section_id COLLATE DATABASE_DEFAULT
+              = se.section_id COLLATE DATABASE_DEFAULT
+          AND sct.teacher_id COLLATE DATABASE_DEFAULT = ? COLLATE DATABASE_DEFAULT
+          AND sct.course_no  COLLATE DATABASE_DEFAULT = ? COLLATE DATABASE_DEFAULT
+    ) THEN 1 ELSE 0 END AS teaches
+FROM dbo.Section_Export AS se
+WHERE se.section_id = ?;
+"""
+
+# One row per enrolled student: DISTINCT student_id first, then a join on
+# the Student_Export primary key. Only the roster fields are selected.
+SECTION_ROSTER_SQL = """
+SELECT
+    e.student_id,
+    s.student_name,
+    s.enrollment_status
+FROM (
+    SELECT DISTINCT en.student_id COLLATE DATABASE_DEFAULT AS student_id
+    FROM dbo.Enrollment_Export AS en
+    WHERE en.section_id COLLATE DATABASE_DEFAULT = ? COLLATE DATABASE_DEFAULT
+      AND en.course_no  COLLATE DATABASE_DEFAULT = ? COLLATE DATABASE_DEFAULT
+) AS e
+LEFT JOIN dbo.Student_Export AS s
+    ON s.student_id COLLATE DATABASE_DEFAULT = e.student_id
+ORDER BY e.student_id;
+"""
+
+SECTION_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _\-./]{0,19}$")
 
 
 def _text(value):
@@ -166,4 +214,81 @@ def list_teacher_sections(teacher_id, course_code, semester_no, academic_session
         "total": len(sections),
         "total_enrolled_students": sum(s["enrolled_students"] for s in sections),
         "sections": sections,
+    }
+
+
+def normalize_section_id(section_id):
+    if not isinstance(section_id, str) or not SECTION_ID_PATTERN.match(section_id.strip()):
+        raise ValueError("section_id is invalid")
+    return section_id.strip()
+
+
+def list_section_students(teacher_id, section_id, course_code, semester_no,
+                          academic_session, connection_factory=get_connection):
+    """
+    Course-enrolled students of one section the teacher teaches.
+
+    Order of checks: course exists (404) -> section exists (404) -> teacher
+    allocated to section for this course (403) -> section is in the
+    requested semester/session (404) -> roster. A teacher who is not
+    allocated learns nothing about the section's term or students.
+    """
+    if not isinstance(teacher_id, str) or not teacher_id.strip():
+        raise ValueError("Invalid teacher ID")
+    teacher_id = teacher_id.strip()
+    section_id = normalize_section_id(section_id)
+    course_code, semester, session = normalize_filters(
+        course_code, semester_no, academic_session)
+
+    conn = connection_factory()
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(COURSE_SQL, (course_code,))
+        course_row = cursor.fetchone()
+        if course_row is None:
+            raise CourseNotFoundError("Course not found")
+        stored_code, course_name = _text(course_row[0]), _text(course_row[1])
+
+        cursor.execute(SECTION_ACCESS_SQL, (teacher_id, stored_code, section_id))
+        section_row = cursor.fetchone()
+        if section_row is None:
+            raise SectionNotFoundError("Section not found")
+        if not section_row[5]:
+            raise SectionAccessDeniedError(
+                "You are not assigned to this section for this course")
+
+        stored_semester = _semester_value(section_row[3])
+        stored_session = _text(section_row[4])
+        if stored_semester != semester or (stored_session or "").casefold() != session.casefold():
+            raise SectionNotFoundError(
+                "Section not found for this semester and academic session")
+
+        cursor.execute(SECTION_ROSTER_SQL, (_text(section_row[0]), stored_code))
+        rows = cursor.fetchall()
+    finally:
+        conn.rollback()
+        conn.close()
+
+    stored_section_id = _text(section_row[0])
+    students = [{
+        "student_id": _text(r[0]),
+        "registration_no": _text(r[0]),
+        "student_name": _text(r[1]),
+        "section_id": stored_section_id,
+        "enrollment_status": _text(r[2]),
+    } for r in rows]
+
+    return {
+        "section": {
+            "section_id": stored_section_id,
+            "section_name": _text(section_row[1]),
+            "program": _text(section_row[2]),
+            "semester_no": stored_semester,
+            "academic_session": stored_session,
+            "course_code": stored_code,
+            "course_name": course_name,
+        },
+        "total": len(students),
+        "students": students,
     }

@@ -1,6 +1,6 @@
 # Backend API Contract — Auto Test Case Generator
 
-Last verified against the code: 2026-11-17 (37 routes, `app.url_map`); `GET /api/teacher/sections` added 2026-11-19.
+Last verified against the code: 2026-11-17 (37 routes, `app.url_map`); `GET /api/teacher/sections` added 2026-11-19; `GET /api/teacher/sections/<section_id>/students` added 2026-11-20.
 
 Base URL: the backend listens on `http://127.0.0.1:5000`. Frontend code
 should call **relative** `/api/...` URLs through a dev-server proxy (see
@@ -227,6 +227,68 @@ This works because:
 - `GET /api/assessments/<id>/assignable-sections` remains the per-assessment view, with `already_assigned` flags.
 
 This endpoint never writes anything.
+
+### `GET /api/teacher/sections/<section_id>/students?course_code=CSC-101&semester_no=1&academic_session=2025SM`
+
+Used by the Section Details screen's “View all students”. It is read-only. It returns the students **enrolled in this course in this section**, meaning distinct `Enrollment_Export.student_id` for section + course, with names from `Student_Export`.
+
+**Access:**
+- Requires a teacher JWT. The teacher is taken from the token; a `teacher_id` parameter returns 400.
+- The teacher must be allocated to the section for the course in `SectionCourseTeacher`. This is the same rule as the sections list and section assignment.
+- A teacher who is not allocated gets **403** before anything about the section's term or students is read.
+
+**Parameters:**
+- `section_id` (path): up to 20 characters, for example `SEC000003`.
+- Query parameters: the same three as `GET /api/teacher/sections`, all required.
+- The section must have exactly that `semester_no` and `academic_session` (case-insensitive), otherwise **404**.
+
+**Pagination:** none. The whole roster is returned (the largest current section has 47 students).
+
+**200 response** (values are illustrative):
+
+```json
+{
+  "status": "success",
+  "section": {"section_id": "SEC000003", "section_name": "C", "program": "BCS",
+              "semester_no": 1, "academic_session": "2025SM",
+              "course_code": "CSC-101", "course_name": "PROGRAMMING FUNDAMENTALS"},
+  "total": 33,
+  "students": [
+    {"student_id": "2025-ARID-XXXX", "registration_no": "2025-ARID-XXXX",
+     "student_name": "FULL NAME", "section_id": "SEC000003",
+     "enrollment_status": "ENROLLED"}
+  ]
+}
+```
+
+**Student fields** (only these five):
+
+| Field | Source |
+|---|---|
+| `student_id` | `Student_Export.student_id`, the primary key and stable identifier |
+| `registration_no` | The same value. In this database the ARID registration number *is* the student ID; there is no separate column. |
+| `student_name` | `Student_Export.student_name`. `null` only if the enrolled student has no `Student_Export` row; none do today. |
+| `section_id` | The requested section |
+| `enrollment_status` | `Student_Export.enrollment_status`, for example `ENROLLED` |
+
+**Rules:**
+- Students are sorted by `student_id`, and each student appears once even if the enrollment table had duplicate rows.
+- `total` equals that section's `enrolled_students` in `GET /api/teacher/sections`.
+- **Never returned:** passwords, emails, phone numbers, program or intake details per student, or any other student field.
+
+**Empty state:** **200** with `"total": 0, "students": []`, only for an authorized section that genuinely has no enrolled students in the course.
+
+**Errors** (`{status:"error", message, code}`):
+
+| HTTP | `code` | When |
+|---|---|---|
+| 401 / 422 | `AUTH_REQUIRED` · `TOKEN_EXPIRED` / `INVALID_TOKEN` | missing, expired or malformed token |
+| 403 | `TEACHER_ONLY` | student token |
+| 403 | `SECTION_ACCESS_DENIED` | teacher is not allocated to this section for this course |
+| 404 | `COURSE_NOT_FOUND` | unknown `course_code` |
+| 404 | `SECTION_NOT_FOUND` | unknown section, or section not in the requested semester/session |
+| 400 | `INVALID_PARAMETER` | missing, invalid, unknown (including `teacher_id`) or duplicate parameter |
+| 500 | `ROSTER_UNAVAILABLE` | database or server failure. A generic message; SQL details are only in the server log. |
 
 `DELETE /api/assessments/<id>` now also returns **409** (not 500) when a rubric,
 reference solution or constraint review draft is linked to the assessment, or on
