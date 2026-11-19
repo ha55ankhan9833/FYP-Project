@@ -1140,5 +1140,9 @@ app.register_blueprint(assessment_section_bp)
 from reference_solution_routes import reference_solution_bp
 app.register_blueprint(reference_solution_bp)
 
+# Teacher "My Sections" API (read-only, Instructor Dashboard / Select Section)
+from teacher_section_routes import teacher_section_bp
+app.register_blueprint(teacher_section_bp)
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

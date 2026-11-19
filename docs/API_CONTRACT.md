@@ -1,6 +1,6 @@
 # Backend API Contract — Auto Test Case Generator
 
-Last verified against the code: 2026-11-17 (37 routes, `app.url_map`).
+Last verified against the code: 2026-11-17 (37 routes, `app.url_map`); `GET /api/teacher/sections` added 2026-11-19.
 
 Base URL: the backend listens on `http://127.0.0.1:5000`. Frontend code
 should call **relative** `/api/...` URLs through a dev-server proxy (see
@@ -151,6 +151,82 @@ A teacher can assign their assessment only to sections where
 | GET | `/api/assessments/<id>/sections` | — | 200 `{total, sections:[{assessment_section_id, section_id, section_name, semester_no, program, academic_session, enrolled_students, submission_count, removable}]}` · 404 |
 | POST | `/api/assessments/<id>/sections` | `{"section_ids": ["SEC-A", "SEC-B"]}` (1–50, ≤20 chars, no duplicates) | 201 `{assessment_id, course_code, assigned:[{assessment_section_id, section_id}], deadline_at}` · **all-or-nothing**: on any problem nothing is saved and the body has `errors:[{section_id, reason}]` with status 404 `SECTION_NOT_FOUND` › 403 `TEACHER_NOT_ASSIGNED_TO_SECTION` › 409 `ALREADY_ASSIGNED` · 400 validation · 404 not owner |
 | DELETE | `/api/assessments/<id>/sections/<section_id>` | — | 200 `{removed:true}` · 409 if any submission exists for that section · 404 not assigned / not owner |
+
+## Teacher — my sections (NEW, 2026-11-19, read-only)
+
+### `GET /api/teacher/sections?course_code=CSC-101&semester_no=1&academic_session=2025SM`
+
+Used by the Instructor Dashboard (“My Sections”) and the Select Section screen.
+
+**Which sections are returned:**
+- the sections where `SectionCourseTeacher` links the **authenticated teacher** (from the JWT) to `course_code`;
+- limited to those whose `Section_Export.semester_no` and `academic_session` match the query.
+
+**Query parameters:** all three are required, and each may appear once.
+
+| Param | Rule |
+|---|---|
+| `course_code` | letters, digits, `-` `_` `.`, at most 100 characters (case-insensitive) |
+| `semester_no` | whole number, 1–20 |
+| `academic_session` | 4 digits + 2 letters, for example `2025SM` |
+
+Any other parameter, **including `teacher_id`**, returns 400. The teacher is never taken from the client.
+
+**200 response:**
+
+```json
+{
+  "status": "success",
+  "teacher": {"teacher_id": "BIIT235", "teacher_name": "UMAR FAROOQ", "department": "CS"},
+  "course": {"course_code": "CSC-101", "course_name": "PROGRAMMING FUNDAMENTALS"},
+  "filters": {"course_code": "CSC-101", "semester_no": 1, "academic_session": "2025SM"},
+  "total": 2,
+  "total_enrolled_students": 89,
+  "sections": [
+    {"section_id": "SEC000001", "section_name": "A", "program": "BCS",
+     "course_code": "CSC-101", "course_name": "PROGRAMMING FUNDAMENTALS",
+     "semester_no": 1, "academic_session": "2025SM", "intake_year": 2025,
+     "enrolled_students": 47, "teacher_id": "BIIT235", "teacher_name": "UMAR FAROOQ"},
+    {"section_id": "SEC000004", "section_name": "D", "program": "BCS",
+     "course_code": "CSC-101", "course_name": "PROGRAMMING FUNDAMENTALS",
+     "semester_no": 1, "academic_session": "2025SM", "intake_year": 2025,
+     "enrolled_students": 42, "teacher_id": "BIIT235", "teacher_name": "UMAR FAROOQ"}
+  ]
+}
+```
+
+**Fields:**
+- Sections are ordered by `program`, then `section_name`, then `section_id`. There is one row per section; no duplicates come from joins.
+- `enrolled_students` = `COUNT(DISTINCT student_id)` in `Enrollment_Export` for that section **and course**. This is the same number `assignable-sections` uses.
+- `academic_session` is the stored code (`2025SM`). The database does not store words such as Spring, Fall, Morning or Evening, so show the code as-is.
+- `intake_year` is the first four digits of that code.
+- `filters` echoes the validated query.
+- No student identifiers are returned, only counts.
+- `teacher_name` comes from `Teacher_Export`, so this endpoint can also supply the dashboard header name (`/api/auth/me` returns only `user_id` and `role`).
+
+**Errors** (all have `{status:"error", message, code}`):
+
+| HTTP | `code` | When | UI state |
+|---|---|---|---|
+| 401 | `AUTH_REQUIRED` / `TOKEN_EXPIRED` | no or expired token | go to login |
+| 422 | `INVALID_TOKEN` | malformed token | go to login |
+| 403 | `TEACHER_ONLY` | student token | “not allowed” |
+| 403 | `TEACHER_NOT_FOUND` | token's teacher no longer exists | go to login |
+| 400 | `INVALID_PARAMETER` | missing, invalid, unknown or duplicate parameter | developer error |
+| 404 | `COURSE_NOT_FOUND` | `course_code` not in `Course_Export` | “course not found” |
+| 500 | `SECTIONS_UNAVAILABLE` | database or server failure (details are only in the server log) | error + retry |
+
+**Empty state:** a teacher with no matching allocation gets **200** with `"sections": []` and `"total": 0`. That is not an error.
+
+**Select Section flow:**
+1. Render one checkbox per `sections[]` item, labelled `{program}-{section_name} ({academic_session}) · {enrolled_students} students`.
+2. After `POST /api/assessments` returns `assessment_id`, send the checked IDs to `POST /api/assessments/<assessment_id>/sections` with `{"section_ids": [...]}`.
+
+This works because:
+- the same `SectionCourseTeacher` rule authorizes that POST, so every listed section is assignable for an assessment of that course;
+- `GET /api/assessments/<id>/assignable-sections` remains the per-assessment view, with `already_assigned` flags.
+
+This endpoint never writes anything.
 
 `DELETE /api/assessments/<id>` now also returns **409** (not 500) when a rubric,
 reference solution or constraint review draft is linked to the assessment, or on
