@@ -195,6 +195,183 @@ def set_input_schema(draft, input_schema):
     return updated
 
 
+MAX_REVIEWED_ITEMS = 50
+MAX_REVIEWED_TEXT = 500
+
+
+class ReviewConflict(ValueError):
+    """The draft is already approved/finalized with different content."""
+
+
+class ReviewRejected(ValueError):
+    """The reviewed content cannot be approved as submitted (422)."""
+
+    def __init__(self, code, message, details=None):
+        super().__init__(message)
+        self.code = code
+        self.details = details or []
+
+
+def _reviewed_list(values, category, allow_empty):
+    if not isinstance(values, list):
+        raise ValueError(f"{category}_constraints must be a list of strings")
+    if len(values) > MAX_REVIEWED_ITEMS:
+        raise ValueError(f"At most {MAX_REVIEWED_ITEMS} {category} constraints")
+    cleaned, seen = [], set()
+    for value in values:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{category} constraints must be non-empty strings")
+        text = value.strip()
+        if len(text) > MAX_REVIEWED_TEXT:
+            raise ValueError(f"A {category} constraint is longer than "
+                             f"{MAX_REVIEWED_TEXT} characters")
+        key = " ".join(text.split()).casefold()
+        if key in seen:
+            raise ValueError(f"Duplicate {category} constraint: {text}")
+        seen.add(key)
+        cleaned.append(text)
+    if not cleaned and not allow_empty:
+        raise ValueError(f"At least one {category} constraint is required")
+    return cleaned
+
+
+def _accepted(draft, category):
+    return [item["text"].strip() for item in draft["constraints"]
+            if item["category"] == category and item["review_status"] == "ACCEPTED"]
+
+
+def _same_texts(a, b):
+    norm = lambda items: sorted(" ".join(t.split()).casefold() for t in items)  # noqa: E731
+    return norm(a) == norm(b)
+
+
+def _checked_schema(input_schema):
+    if input_schema is None:
+        return None
+    from input_schema import check_schema
+    checked = check_schema(input_schema)          # SchemaError on problems
+    return {k: checked[k] for k in ("version", "variables", "items", "relations")}
+
+
+def schema_constraint_mismatches(value_constraints, input_schema):
+    """
+    Explicit bounds in the reviewed value constraints that contradict the
+    structured schema (same variable / array name, different range).
+    Bounds for names the schema does not declare are not judged.
+    """
+    from numeric_constraint_validator import extract_explicit_bounds
+
+    ranges = {name: (spec.get("min"), spec.get("max"))
+              for name, spec in (input_schema.get("variables") or {}).items()}
+    for item in input_schema.get("items") or []:
+        if item.get("type") == "array" and item.get("name"):
+            ranges[item["name"]] = (item.get("min"), item.get("max"))
+
+    mismatches = []
+    for bound in extract_explicit_bounds("\n".join(value_constraints)):
+        low_text, variable, high_text = [p.strip() for p in bound["text"].split("<=")]
+        name = variable.split("[", 1)[0]
+        if name not in ranges:
+            continue
+        try:
+            low, high = int(low_text), int(high_text)
+        except ValueError:
+            continue                                  # powers: not compared
+        if (low, high) != tuple(ranges[name]):
+            mismatches.append({"constraint": bound["text"], "schema_name": name,
+                               "schema_range": list(ranges[name])})
+    return mismatches
+
+
+def approve_reviewed_constraints(draft, value_constraints, code_constraints,
+                                 input_schema):
+    """
+    One explicit teacher action ("Generate Test Cases"): make the draft hold
+    EXACTLY the reviewed value and code constraints and schema that the
+    teacher saw, approve both categories and finalize.
+
+    Built only from the existing operations (apply_action, set_input_schema,
+    approve_category, finalize_draft), applied to a copy; the caller writes
+    the result once with optimistic concurrency.
+
+    Returns (result, replay):
+      replay=False  -> result = finalize_draft(...) output, must be saved
+      replay=True   -> draft was already finalized with identical content;
+                       nothing to save (idempotent retry).
+    Raises ReviewConflict when an approved/finalized category differs, and
+    ReviewRejected for content that cannot be generated from.
+    """
+    values = _reviewed_list(value_constraints, "value", allow_empty=False)
+    codes = _reviewed_list(code_constraints, "code", allow_empty=True)
+    schema = _checked_schema(input_schema)
+
+    if schema is not None:
+        mismatches = schema_constraint_mismatches(values, schema)
+        if mismatches:
+            raise ReviewRejected(
+                "SCHEMA_CONSTRAINT_MISMATCH",
+                "Value constraints contradict the input schema", mismatches)
+    else:
+        from generic_test_inputs import parse_approved_value_constraints
+        try:
+            parse_approved_value_constraints("\n".join(values))
+        except ValueError as error:
+            raise ReviewRejected(
+                "INPUT_SCHEMA_REQUIRED",
+                "These value constraints need a reviewed structured input "
+                "schema before test cases can be generated", [str(error)])
+
+    def stored_schema(d):
+        return _checked_schema(d.get("input_schema"))
+
+    if draft["finalized"]:
+        if (_same_texts(_accepted(draft, "value"), values)
+                and _same_texts(_accepted(draft, "code"), codes)
+                and stored_schema(draft) == schema):
+            return {"draft": draft,
+                    "approved_constraints": [i for i in draft["constraints"]
+                                             if i["review_status"] == "ACCEPTED"]}, True
+        raise ReviewConflict("Draft is already finalized with different "
+                             "constraints or input schema")
+
+    updated = copy.deepcopy(draft)
+
+    for category, wanted in (("value", values), ("code", codes)):
+        if updated["approval"][category]:
+            if not _same_texts(_accepted(updated, category), wanted):
+                raise ReviewConflict(f"The {category} constraints are already "
+                                     "approved with different content")
+            continue
+
+        remaining = list(wanted)
+        for item in [i for i in updated["constraints"] if i["category"] == category]:
+            text = item["text"].strip()
+            match = next((w for w in remaining
+                          if " ".join(w.split()).casefold() == " ".join(text.split()).casefold()),
+                         None)
+            if match is not None:
+                remaining.remove(match)
+                action = "ACCEPT" if match == text else "EDIT"
+                updated = apply_action(updated, action, category, item["id"], match)
+            elif item["review_status"] != "REJECTED":
+                updated = apply_action(updated, "DELETE", category, item["id"])
+        for text in remaining:
+            updated = apply_action(updated, "ADD", category, None, text)
+
+    if updated["approval"]["value"]:
+        if stored_schema(updated) != schema:
+            raise ReviewConflict("The input schema is locked by an earlier "
+                                 "value approval and differs")
+    else:
+        updated = set_input_schema(updated, schema)
+        updated = approve_category(updated, "value")
+
+    if not updated["approval"]["code"]:
+        updated = approve_category(updated, "code")
+
+    return finalize_draft(updated), False
+
+
 def finalize_draft(draft):
 
     if draft["finalized"]:

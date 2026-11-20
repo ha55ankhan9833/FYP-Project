@@ -176,7 +176,7 @@ A teacher can assign their assessment only to sections where
 |---|---|---|---|
 | GET | `/api/assessments/<id>/assignable-sections` | — | 200 `{course_code, total, sections:[{section_id, section_name, semester_no, program, academic_session, enrolled_students, already_assigned}]}` · 404 not owner |
 | GET | `/api/assessments/<id>/sections` | — | 200 `{total, sections:[{assessment_section_id, section_id, section_name, semester_no, program, academic_session, enrolled_students, submission_count, removable}]}` · 404 |
-| POST | `/api/assessments/<id>/sections` | `{"section_ids": ["SEC-A", "SEC-B"]}` (1–50, ≤20 chars, no duplicates) | 201 `{assessment_id, course_code, assigned:[{assessment_section_id, section_id}], deadline_at}` · **all-or-nothing**: on any problem nothing is saved and the body has `errors:[{section_id, reason}]` with status 404 `SECTION_NOT_FOUND` › 403 `TEACHER_NOT_ASSIGNED_TO_SECTION` › 409 `ALREADY_ASSIGNED` · 400 validation · 404 not owner |
+| POST | `/api/assessments/<id>/sections` | `{"section_ids": ["SEC-A", "SEC-B"]}` (1–50, ≤20 chars, no duplicates) | 201 `{assessment_id, course_code, assigned:[{assessment_section_id, section_id}], deadline_at}` · **all-or-nothing**: on any problem nothing is saved and the body has `errors:[{section_id, reason}]` with status 404 `SECTION_NOT_FOUND` › 403 `TEACHER_NOT_ASSIGNED_TO_SECTION` › 409 `ALREADY_ASSIGNED` · 400 validation · 404 not owner · **409 `ASSESSMENT_NOT_READY` (publishing guard, 2026-11-20)** `missing:[{code, detail}]` with `TEST_CASES_NOT_GENERATED` (not exactly 10 saved test cases) and/or `RUBRIC_INCOMPLETE` (criteria do not add up to the rubric allocation). The guard is checked before any section, and nothing is written. |
 | DELETE | `/api/assessments/<id>/sections/<section_id>` | — | 200 `{removed:true}` · 409 if any submission exists for that section · 404 not assigned / not owner |
 
 ## Teacher — my sections (NEW, 2026-11-19, read-only)
@@ -332,6 +332,12 @@ any other foreign-key conflict.
 | POST | `/api/assessments/<id>/generate-test-cases` | Body `{additional_inputs?: [≤10 strings]}`. Works for **any owned assessment** with finalized approved constraints and an APPROVED reference. `additional_inputs` are teacher edge cases, validated against the approved constraints; expected outputs always come from the reference. 201 `{execution_mode, generated_count, saved_count, marks_per_test, test_marks_allocated}`. 409 already generated. 400 if constraints are not a supported integer-range form, or if the reference is neither allow-listed for host execution nor runnable in a verified sandbox. |
 | POST | `/api/assessments/<id>/generate-test-cases/oracle` **NEW** | Teacher only. Body `{oracle_id, additional_inputs?, dry_run? (default true)}` — **no expected outputs accepted**. Outputs are computed server-side by a reviewed oracle in `verified_oracles.py` that is bound to the assessment's APPROVED reference hash and checked by two independent algorithms. Same preflight and atomic save as the C++ path. `dry_run:true` → 200 preview with `test_cases` (teacher only); `dry_run:false` → 201 saved. 400 unknown oracle / wrong reference / constraints outside verified domain · 404 not owner · 409 tests already exist. |
 | GET | `/api/assessments/<id>/test-cases` | Teacher only. Includes hidden inputs/outputs. The `marks` column is display-only; grading always uses **equal weight**. |
+| GET | `/api/assessments/<id>/generation-readiness` **NEW 2026-11-20** | Teacher owner only. Read-only checklist: `ready_to_generate`, `missing_for_generation[]`, `ready_to_publish`, `missing_for_publish[]`, `checks.expected_output_source` (which generation endpoint applies, or `null`). Details: `docs/STEP1_3_GENERATION_CONTRACT.md` §4. |
+
+**Step 2 → Step 3 "Generate Test Cases" (2026-11-20):**
+- `POST /api/ai/drafts/<id>/approve-reviewed` `{value_constraints, code_constraints, input_schema}` saves exactly the reviewed constraints and schema, approves both categories and finalizes, in one call. A retry with identical content is idempotent (`replay:true`).
+- `POST /api/assessments` with an already-used draft now returns **409 `DRAFT_ALREADY_USED` + `assessment_id`**.
+- The full click sequence is in `docs/STEP1_3_GENERATION_CONTRACT.md`.
 
 ## Teacher — test-input suggestions (NEW, 2026-11-18)
 
@@ -375,7 +381,7 @@ These endpoints are **teacher only**.
 |---|---|---|
 | PUT | `/api/ai/drafts/<draft_id>/input-schema` **NEW** | Body `{input_schema: object \| null}`. Teacher-owned drafts only; another teacher's draft → 404. Allowed only **before the value category is approved**, so approval and finalization lock it together with the value constraints. Responses: 400 `INVALID_INPUT_SCHEMA` · 422 `UNSUPPORTED_INPUT_FORMAT` · 409 draft changed/finalized. |
 | POST | `/api/assessments/<id>/generate-test-cases` | Unchanged for legacy assessments. With an approved schema, the structured behaviour below applies. |
-| POST | `/api/assessments/<id>/generate-test-cases/oracle` | A structured assessment → 400. The verified oracles cover the legacy integer form only. |
+| POST | `/api/assessments/<id>/generate-test-cases/oracle` | **Updated 2026-11-20.** Structured assessments are served by **structured** oracles (`max_min_v1`) whose schema shape and domain match the approved schema. Legacy oracles (`prime_check_v1`) still refuse structured assessments (400), and structured oracles refuse legacy ones (400). Invalid `additional_inputs` → 400 `INVALID_TEST_INPUT` with `errors: [{index, errors}]`. |
 | POST | `/api/assessments/<id>/test-inputs/suggestions` | Reuses the approved schema automatically (`schema_source: "approved_input_schema"`). `additional_inputs.format = "exact_text"`; `suggested` has been pre-checked with the real selection rule. |
 
 **`generate-test-cases` with an approved schema:**

@@ -123,8 +123,18 @@ class AllowlistS2Tests(unittest.TestCase):
     def test_allowlist_is_consulted_only_by_reference_generation(self):
         users = sorted(p.name for p in ROOT.glob("*.py")
                        if "trusted_reference_hashes" in p.read_text(encoding="utf-8", errors="replace"))
-        self.assertEqual(users, ["test_case_generation_orchestrator.py",
+        # assessment_readiness_service only REPORTS whether an allowlist
+        # entry applies (read-only; see test_readiness_never_executes).
+        self.assertEqual(users, ["assessment_readiness_service.py",
+                                 "test_case_generation_orchestrator.py",
                                  "test_case_generation_service.py"])
+
+    def test_readiness_never_executes(self):
+        source = (ROOT / "assessment_readiness_service.py").read_text(encoding="utf-8")
+        for forbidden in ("cpp_compiler", "cpp_runner", "compile_cpp", "host_runner",
+                          "subprocess", "sandbox.compile", "build_test_cases",
+                          "save_generated_test_cases"):
+            self.assertNotIn(forbidden, source)
 
 
 class PlannedCasesTests(unittest.TestCase):

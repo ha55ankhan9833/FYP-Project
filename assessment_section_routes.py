@@ -38,6 +38,8 @@ def _teacher_id():
 def _handle(exc, action):
     if isinstance(exc, service.AssessmentNotFoundError):
         return _error(str(exc), 404)
+    if isinstance(exc, service.AssessmentNotReadyError):
+        return _error(str(exc), 409, code="ASSESSMENT_NOT_READY", missing=exc.missing)
     if isinstance(exc, service.SectionAssignmentError):
         return _error(str(exc), exc.status_code, errors=exc.errors)
     if isinstance(exc, service.AssignmentConflictError):

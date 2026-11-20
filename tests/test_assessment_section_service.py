@@ -24,13 +24,21 @@ class FakeIntegrityError(Exception):
 def responder_factory(owned=True, sections=("SEC-A", "SEC-B"),
                       teaches=("SEC-A", "SEC-B"), assigned=(),
                       submissions=0, delete_rowcount=1,
-                      insert_error=None):
+                      insert_error=None, test_cases=10,
+                      rubric=((1, "Logic", "3.00", None), (2, "Quality", "2.00", None))):
     next_id = [100]
 
     def responder(sql, params):
         if "FROM dbo.Assessment WITH (UPDLOCK, HOLDLOCK)" in sql \
                 or sql.startswith("SELECT assessment_id, course_code, deadline_at"):
-            return ([(7, "CAI-252", DEADLINE, False)] if owned else []), -1
+            return ([(7, "CAI-252", DEADLINE, False, "10.00", "50.00")]
+                    if owned else []), -1
+        if "FROM dbo.TestCase WITH (HOLDLOCK)" in sql:
+            return [(test_cases,)], -1
+        if "OBJECT_ID(N'dbo.AssessmentRubricCriterion'" in sql:
+            return [(1,)], -1
+        if "FROM dbo.AssessmentRubricCriterion WITH (HOLDLOCK)" in sql:
+            return list(rubric), -1
         if "FROM dbo.Section_Export WHERE section_id = ?" in sql:
             return ([(params[0],)] if params[0] in sections else []), -1
         if "FROM dbo.SectionCourseTeacher" in sql and "THEN 1 ELSE 0" in sql:
@@ -153,6 +161,32 @@ class AssignSectionsTests(unittest.TestCase):
         self.assertGreaterEqual(conn.rollbacks, 1)
         self.assertTrue(conn.closed)
 
+    def test_publish_refused_without_ten_test_cases(self):
+        for count in (0, 9, 11):
+            with self.subTest(count=count):
+                conn = FakeConnection(responder_factory(test_cases=count))
+                exc = assign(conn, ["SEC-A"])
+                self.assertIsInstance(exc, svc.AssessmentNotReadyError)
+                self.assertEqual([m["code"] for m in exc.missing],
+                                 ["TEST_CASES_NOT_GENERATED"])
+                self.assertFalse(conn.statements("INSERT"))
+                self.assertEqual(conn.commits, 0)
+
+    def test_publish_refused_with_incomplete_rubric(self):
+        conn = FakeConnection(responder_factory(rubric=((1, "Logic", "3.00", None),)))
+        exc = assign(conn, ["SEC-A"])
+        self.assertEqual([m["code"] for m in exc.missing], ["RUBRIC_INCOMPLETE"])
+        self.assertFalse(conn.statements("INSERT"))
+        both = assign(FakeConnection(responder_factory(test_cases=0, rubric=())), ["SEC-A"])
+        self.assertEqual([m["code"] for m in both.missing],
+                         ["TEST_CASES_NOT_GENERATED", "RUBRIC_INCOMPLETE"])
+
+    def test_publish_guard_runs_before_any_section_check(self):
+        conn = FakeConnection(responder_factory(test_cases=0))
+        assign(conn, ["SEC-A"])
+        self.assertFalse(conn.statements("FROM dbo.Section_Export"))
+        self.assertFalse(conn.statements("FROM dbo.SectionCourseTeacher"))
+
     def test_input_validation_before_db(self):
         for bad in ([], "SEC-A", ["SEC-A", "sec-a"], [""], ["x" * 21],
                     [5], ["A;DROP"], ["SEC"] * 51):
@@ -263,6 +297,16 @@ class SectionRouteTests(unittest.TestCase):
                                  headers=headers())
         self.assertEqual(r.status_code, 403)
         self.assertEqual(r.get_json()["errors"][0]["section_id"], "SEC-C")
+
+    def test_not_ready_409_lists_missing(self):
+        err = svc.AssessmentNotReadyError(
+            [{"code": "TEST_CASES_NOT_GENERATED", "detail": "0 of 10 test cases"}])
+        with patch.object(svc, "assign_sections", side_effect=err):
+            r = self.client.post("/api/assessments/7/sections",
+                                 json={"section_ids": ["SEC-A"]}, headers=headers())
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(r.get_json()["code"], "ASSESSMENT_NOT_READY")
+        self.assertEqual(r.get_json()["missing"][0]["code"], "TEST_CASES_NOT_GENERATED")
 
     def test_delete_conflict_409(self):
         with patch.object(svc, "remove_section",

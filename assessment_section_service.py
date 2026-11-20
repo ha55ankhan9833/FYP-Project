@@ -39,6 +39,37 @@ class AssignmentConflictError(ValueError):
     pass
 
 
+class AssessmentNotReadyError(ValueError):
+    """Publishing refused: verified test cases or marks configuration missing."""
+
+    def __init__(self, missing):
+        self.missing = missing
+        super().__init__("Assessment is not ready to publish")
+
+
+def publish_problems(cursor, assessment_id, total_marks, validation_percentage):
+    """
+    [] when the assessment may be assigned to sections, else the reasons.
+    Same rules as generation/submission: exactly REQUIRED_TEST_CASE_COUNT
+    saved test cases and a complete rubric for the rubric allocation.
+    """
+    from assessment_rubric_service import check_rubric_ready
+    from test_case_policy import REQUIRED_TEST_CASE_COUNT
+
+    problems = []
+    cursor.execute(COUNT_TEST_CASES_SQL, (assessment_id,))
+    count = int(cursor.fetchone()[0])
+    if count != REQUIRED_TEST_CASE_COUNT:
+        problems.append({"code": "TEST_CASES_NOT_GENERATED",
+                         "detail": f"{count} of {REQUIRED_TEST_CASE_COUNT} test cases"})
+    try:
+        check_rubric_ready(cursor, assessment_id, total_marks, validation_percentage)
+    except ValueError:
+        problems.append({"code": "RUBRIC_INCOMPLETE",
+                         "detail": "Rubric criteria must add up to the rubric allocation"})
+    return problems
+
+
 class SectionAssignmentError(ValueError):
     """One or more requested sections failed validation; nothing saved."""
 
@@ -63,9 +94,18 @@ class SectionAssignmentError(ValueError):
 # ----------------------------------------------------------------------
 
 LOCK_OWNED_ASSESSMENT_SQL = """
-SELECT assessment_id, course_code, deadline_at, allow_late
+SELECT assessment_id, course_code, deadline_at, allow_late,
+       total_marks, validation_percentage
 FROM dbo.Assessment WITH (UPDLOCK, HOLDLOCK)
 WHERE assessment_id = ? AND teacher_id = ?;
+"""
+
+# Publishing guard: the saved test set (written only by the verified save
+# paths) must be complete before students can see the assessment.
+COUNT_TEST_CASES_SQL = """
+SELECT COUNT(*)
+FROM dbo.TestCase WITH (HOLDLOCK)
+WHERE assessment_id = ?;
 """
 
 READ_OWNED_ASSESSMENT_SQL = """
@@ -260,6 +300,12 @@ def assign_sections(assessment_id, teacher_id, section_ids,
             raise AssessmentNotFoundError("Assessment not found")
 
         course_code = assessment[1]
+
+        # Publishing guard (nothing is written when it fails).
+        missing = publish_problems(cursor, assessment_id, assessment[4], assessment[5])
+        if missing:
+            raise AssessmentNotReadyError(missing)
+
         errors = []
 
         for section_id in requested:

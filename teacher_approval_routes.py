@@ -168,6 +168,85 @@ def draft_input_schema(draft_id):
         return _draft_error(exc)
 
 
+REVIEW_FIELDS = {"value_constraints", "code_constraints", "input_schema"}
+
+
+def _code_constraint_notes(codes):
+    """Reviewed code constraints that the static checker cannot verify."""
+    import re
+    from code_requirement_extractor import SUPPORTED
+
+    structured = re.compile(r"^(?:function|header|container)_(?:required|prohibited)\s*:\s*\S+$"
+                            r"|^helper_required\s*:\s*\S+$", re.IGNORECASE)
+    notes = []
+    for text in codes:
+        key = text.strip()
+        if SUPPORTED.get(key) == "STATIC_CHECK" or structured.match(key):
+            continue
+        notes.append({"code": "CODE_CONSTRAINT_NOT_AUTO_CHECKED", "constraint": key,
+                      "message": "Saved as written; grading reports it as INCONCLUSIVE "
+                                 "for teacher review (no automatic check)."})
+    return notes
+
+
+@approval_bp.post("/api/ai/drafts/<draft_id>/approve-reviewed")
+@jwt_required()
+def draft_approve_reviewed(draft_id):
+    """
+    The teacher's single explicit approval ("Generate Test Cases"): the draft
+    is set to exactly the reviewed value/code constraints and input schema,
+    both categories are approved and the draft is finalized, in one
+    optimistic-concurrency write. Retrying with identical content after
+    success returns 200 with replay=true and writes nothing.
+    """
+    from input_schema import SchemaError
+    from teacher_approval_service import (ReviewConflict, ReviewRejected,
+                                          approve_reviewed_constraints)
+
+    teacher_id = teacher_id_or_error()
+    if teacher_id is None:
+        return _teacher_required()
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != REVIEW_FIELDS:
+        return error_response(
+            "Body must be exactly {value_constraints: [..], code_constraints: [..], "
+            "input_schema: object or null}", 400, "INVALID_REQUEST")
+
+    draft, version = get_draft_with_version(draft_id, teacher_id)
+    if draft is None:
+        return error_response("Draft not found", 404, "DRAFT_NOT_FOUND")
+
+    try:
+        result, replay = approve_reviewed_constraints(
+            draft, data["value_constraints"], data["code_constraints"],
+            data["input_schema"])
+        if not replay:
+            update_draft(teacher_id, result["draft"], version)
+    except SchemaError as exc:
+        return error_response(str(exc), 400 if exc.code == "INVALID_INPUT_SCHEMA" else 422,
+                              exc.code)
+    except ReviewRejected as exc:
+        return error_response(str(exc), 422, exc.code, details=exc.details)
+    except ReviewConflict as exc:
+        return error_response(str(exc), 409, "DRAFT_REVIEW_CONFLICT")
+    except ValueError as exc:
+        if str(exc) == CONFLICT_MESSAGE:
+            return error_response("Draft changed since it was loaded; reload and retry",
+                                  409, "DRAFT_CHANGED")
+        return error_response(str(exc), 400, "INVALID_REQUEST")
+
+    codes = [i["text"] for i in result["approved_constraints"] if i["category"] == "code"]
+    return jsonify({
+        "status": "success",
+        "replay": replay,
+        "draft": result["draft"],
+        "approved_constraints": result["approved_constraints"],
+        "input_schema": result["draft"].get("input_schema"),
+        "notes": _code_constraint_notes(codes),
+    }), 200
+
+
 @approval_bp.post("/api/ai/drafts/<draft_id>/finalize")
 @jwt_required()
 def draft_finalize(draft_id):

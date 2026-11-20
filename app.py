@@ -316,6 +316,29 @@ def get_students():
 # TEACHER ONLY
 # --------------------------------
 
+def _assessment_for_draft(conn, draft_id, teacher_id):
+    """Owned assessment already linked to this teacher's draft, or None."""
+    if conn is None:
+        return None
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT d.assessment_id
+            FROM dbo.ConstraintReviewDraft AS d
+            INNER JOIN dbo.Assessment AS a
+                ON a.assessment_id = d.assessment_id
+            WHERE d.draft_id = ?
+              AND d.teacher_id = ?
+              AND a.teacher_id = ?
+        """, draft_id, teacher_id, teacher_id)
+        row = cursor.fetchone()
+        conn.rollback()
+        return int(row[0]) if row and row[0] is not None else None
+    except Exception:
+        app.logger.exception("Draft lookup failed")
+        return None
+
+
 @app.route("/api/assessments", methods=["POST"])
 @jwt_required()
 def create_assessment():
@@ -530,6 +553,19 @@ def create_assessment():
     except ValueError as error:
         if conn is not None:
             conn.rollback()
+
+        if str(error) == "Draft already linked to an assessment":
+            # Repeated "Generate" click / retry: point the client at the
+            # assessment this teacher already created from this draft
+            # instead of creating a duplicate.
+            existing = _assessment_for_draft(conn, draft_id, teacher_id)
+            if existing is not None:
+                return jsonify({
+                    "status": "error",
+                    "code": "DRAFT_ALREADY_USED",
+                    "message": "An assessment was already created from this draft",
+                    "assessment_id": existing
+                }), 409
 
         return jsonify({
             "status": "error",

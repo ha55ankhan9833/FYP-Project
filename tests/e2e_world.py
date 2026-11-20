@@ -148,7 +148,10 @@ class World:
         a = self.assessment
         ok = p[0] == a["assessment_id"] and p[1] == a["teacher_id"]
         return ([(a["assessment_id"], a["course_code"], a["deadline"],
-                  a["allow_late"])] if ok else []), -1
+                  a["allow_late"], a["total"], a["val"])] if ok else []), -1
+
+    def count_test_cases(self, conn, p):
+        return [(len(self.tests) if p[0] == self.assessment["assessment_id"] else 0,)], -1
 
     def section_exists(self, conn, p):
         return ([(p[0],)] if p[0] in self.sections else []), -1
@@ -511,8 +514,10 @@ class World:
     HANDLERS = [
         ("FROM Teacher_Export WHERE teacher_email = ?", teacher_login),
         ("FROM Student_Export WHERE student_email = ?", student_login),
-        ("SELECT assessment_id, course_code, deadline_at, allow_late FROM dbo.Assessment",
-         owned_assessment),
+        ("SELECT assessment_id, course_code, deadline_at, allow_late, total_marks, "
+         "validation_percentage FROM dbo.Assessment", owned_assessment),
+        ("SELECT COUNT(*) FROM dbo.TestCase WITH (HOLDLOCK) WHERE assessment_id = ?",
+         count_test_cases),
         ("FROM dbo.Section_Export WHERE section_id = ?", section_exists),
         ("SELECT CASE WHEN EXISTS ( SELECT 1 FROM dbo.SectionCourseTeacher AS sct",
          teaches),

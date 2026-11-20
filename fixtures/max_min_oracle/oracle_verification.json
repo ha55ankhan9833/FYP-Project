@@ -1,0 +1,16 @@
+{
+ "oracle_id": "max_min_v1",
+ "reference": "fixtures/reference_solutions/max_min_reference.cpp",
+ "reference_sha256": "89aca8e6279d32de33fd2b65366ec813c55164743c3d4704604aef3c5ae17240",
+ "method": "primary (built-in max/min) vs line-by-line transcription of the reference loop; checks marked full also go through schema validation in expected_output()",
+ "random_seed": 20261120,
+ "checked": {
+  "n1_full_domain": 2001,
+  "n2_full_domain": 4004001,
+  "n3_boundary_values": 9261,
+  "random_arrays_n1_100": 200000
+ },
+ "disagreements": 0,
+ "cpp_compiled_or_executed": false,
+ "seconds": 21.5
+}

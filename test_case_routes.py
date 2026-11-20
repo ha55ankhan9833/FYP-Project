@@ -128,6 +128,36 @@ def get_assessment_test_cases(assessment_id):
 
 
 @test_case_bp.route(
+    "/api/assessments/<int:assessment_id>/generation-readiness",
+    methods=["GET"]
+)
+@jwt_required()
+def get_generation_readiness_route(assessment_id):
+    """Read-only checklist: what is missing before generate / publish."""
+    from flask import current_app
+    from api_errors import error_response
+    from assessment_readiness_service import AssessmentNotFound, get_generation_readiness
+
+    if get_jwt().get("role") != "teacher":
+        return error_response("Teacher access required", 403, "TEACHER_ONLY")
+    teacher_id = get_jwt_identity()
+    if not isinstance(teacher_id, str) or not teacher_id.strip():
+        return error_response("Invalid teacher identity", 403, "TEACHER_ONLY")
+
+    try:
+        data = get_generation_readiness(assessment_id, teacher_id.strip())
+        return jsonify({"status": "success", "data": data}), 200
+    except AssessmentNotFound:
+        return error_response("Assessment not found", 404, "ASSESSMENT_NOT_FOUND")
+    except ValueError as error:
+        return error_response(str(error), 400, "INVALID_REQUEST")
+    except Exception:
+        current_app.logger.exception("Generation readiness check failed")
+        return error_response("Unable to check readiness right now", 500,
+                              "READINESS_UNAVAILABLE")
+
+
+@test_case_bp.route(
     "/api/assessments/<int:assessment_id>/generate-test-cases",
     methods=["POST"]
 )
@@ -258,6 +288,7 @@ def generate_test_cases_from_oracle(assessment_id):
     """
     from flask import request, current_app
     from oracle_test_case_service import generate_from_verified_oracle
+    from test_case_builder import StructuredInputError
     from verified_oracles import OracleError
 
     if get_jwt().get("role") != "teacher":
@@ -297,6 +328,14 @@ def generate_test_cases_from_oracle(assessment_id):
                         else "Test cases saved"),
             "data": result
         }), 200 if result["dry_run"] else 201
+
+    except StructuredInputError as error:
+        return jsonify({
+            "status": "error",
+            "code": "INVALID_TEST_INPUT",
+            "message": str(error),
+            "errors": error.details
+        }), 400
 
     except (OracleError, ValueError) as error:
         message = str(error)
