@@ -1,0 +1,4 @@
+.combined-selection-count { margin: 0 0 12px; color: #2161ff; font-size: 13px; font-weight: 600; }
+.combined-section-list { display: grid; gap: 12px; margin-top: 20px; }
+.combined-section-list .dashboard-section-copy > span { line-height: 20px; }
+.combined-sections-page .section-overview dt { text-align: center; }

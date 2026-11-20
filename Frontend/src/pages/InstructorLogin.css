@@ -1,0 +1,37 @@
+.instructor-login { position: relative; width: min(100%, 448px); margin-inline: auto; padding: 72px 28px 48px; color: #151c2c; }
+.login-back { position: absolute; top: 62px; left: 16px; display: grid; place-items: center; width: 44px; height: 44px; color: #151c2c; border-radius: 10px; }
+.login-header { text-align: center; }
+.login-logo { display: grid; place-items: center; width: 64px; height: 64px; margin: 0 auto 22px; color: #fff; background: #1c78f5; border-radius: 18px; box-shadow: 0 3px 5px #1c78f529; }
+.login-logo svg { width: 30px; height: 30px; stroke-width: 2.6; }
+.login-header h1 { margin: 0; font-size: 25px; line-height: 32px; letter-spacing: -.7px; }
+.login-header p { margin: 4px 0 0; font-size: 13px; line-height: 20px; color: #98a2b5; }
+.login-role { display: grid; place-items: center; min-height: 40px; margin-top: 22px; border-radius: 13px; background: #eaf2ff; color: #1675ff; font-size: 14px; font-weight: 600; }
+.login-form { margin-top: 28px; }
+.login-field + .login-field { margin-top: 18px; }
+.login-field label { display: block; margin-bottom: 7px; font-size: 13px; line-height: 17px; font-weight: 700; }
+.login-field input { display: block; width: 100%; height: 48px; padding: 0 16px; border: 1px solid #e0e4ec; border-radius: 13px; background: #fff; color: #151c2c; font: inherit; font-size: 14px; }
+.login-field input::placeholder { color: #a3acbc; opacity: 1; }
+.login-field input:focus { outline: 2px solid #1c78f5; outline-offset: 2px; }
+.login-field input[aria-invalid="true"] { border-color: #bd3030; }
+.login-field input:disabled { background: #f8fafc; }
+.login-password { position: relative; }
+.login-password input { padding-right: 48px; }
+.instructor-login button { font-family: inherit; cursor: pointer; }
+.login-visibility { position: absolute; right: 3px; top: 2px; width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 10px; color: #98a2b5; background: transparent; }
+.login-visibility svg { width: 18px; height: 18px; }
+.instructor-login button:focus-visible { outline: 3px solid #2161ff; outline-offset: 3px; }
+.login-forgot { margin: 6px 0 16px; text-align: right; font-size: 12px; line-height: 18px; color: #737d90; }
+.login-forgot span { font-size: 10px; }
+.login-submit { width: 100%; min-height: 44px; border: 0; border-radius: 12px; background: #1c78f5; color: white; font-size: 15px; }
+.login-submit:hover:not(:disabled) { background: #1268df; }
+.login-submit:disabled { cursor: wait; opacity: .7; }
+.login-field-error, .login-error, .login-notice { color: #a42525; font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.login-field-error { margin: 6px 0 0; }
+.login-error, .login-notice { padding: 10px 12px; background: #fff4f4; border-radius: 8px; }
+@media (min-width: 768px) {
+  .instructor-login { width: min(100%, 504px); min-height: 100svh; display: flex; flex-direction: column; justify-content: center; padding: 80px 32px; }
+  .login-back { top: 24px; left: 20px; }
+  .login-header h1 { font-size: 28px; }
+  .login-role { margin-top: 26px; }
+  .login-form { margin-top: 28px; }
+}

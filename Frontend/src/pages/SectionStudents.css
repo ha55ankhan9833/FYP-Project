@@ -1,0 +1,29 @@
+.section-students-page { background: #f7f9fb; }
+.section-students-shell { padding: 24px 20px 100px; }
+.students-search { display: flex; align-items: center; gap: 10px; min-height: 40px; margin-top: 20px; padding: 0 14px; border: 1px solid #dce5f2; border-radius: 24px; background: white; box-shadow: 0 2px 3px #17223805; color: #8ca1bd; }
+.students-search svg { flex: 0 0 18px; }
+.students-search input { width: 100%; min-width: 0; height: 40px; padding: 0; border: 0; outline: 0; background: transparent; color: #172238; font: inherit; font-size: 14px; }
+.students-search input::placeholder { color: #8ca1bd; opacity: 1; }
+.students-search input::-webkit-search-cancel-button { appearance: none; }
+.students-search:focus-within { outline: 2px solid #2161ff; outline-offset: 2px; }
+.students-search button { display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 36px; border: 0; background: transparent; color: #637795; font-size: 22px; cursor: pointer; }
+.section-students-page .students-count-heading { margin: 22px 0 12px; font-size: 17px; line-height: 24px; }
+.students-card-list { display: grid; gap: 12px; list-style: none; margin: 0; padding: 0; }
+.student-roster-card { display: flex; align-items: center; gap: 14px; min-height: 74px; padding: 14px; border-radius: 17px; background: white; color: #172238; text-decoration: none; box-shadow: 0 2px 5px #17223806; }
+.student-initials { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border-radius: 50%; font-size: 14px; font-weight: 700; }
+.student-palette-0 { background: #dceaff; color: #1c65ff; }
+.student-palette-1 { background: #fce5f3; color: #ee3994; }
+.student-palette-2 { background: #d1fae6; color: #059d70; }
+.student-palette-3 { background: #fff4c6; color: #d98100; }
+.student-roster-copy { display: grid; gap: 1px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.student-roster-copy strong { font-size: 14px; line-height: 20px; }
+.student-roster-copy > span { color: #8ca1bd; font-size: 12px; line-height: 18px; }
+.student-roster-card > svg { width: 18px; height: 18px; flex: 0 0 18px; color: #8ca1bd; }
+.students-list-state { padding: 18px 16px; border: 1px solid #e0e7f1; border-radius: 16px; background: white; }
+.section-students-page .students-list-state h2 { margin: 0; font-size: 16px; }
+.students-list-state p, .students-search-summary { color: #687d9b; font-size: 13px; line-height: 21px; }
+.students-list-state button { min-height: 36px; padding: 6px 12px; border: 1px solid #dce5f2; border-radius: 8px; color: #2161ff; background: #eff6ff; font: inherit; cursor: pointer; }
+.students-card-skeleton { display: block; height: 74px; margin-bottom: 12px; background: #e9eef5; border-radius: 17px; }
+.student-placeholder-label { font-size: 12px; }
+@media (min-width: 768px) { .section-students-shell { padding: 32px 36px 112px; } .student-roster-card { padding: 16px 20px; } }
+@media (min-width: 1024px) { .section-students-shell { padding: 36px 40px 48px; grid-template-rows: auto; } .section-students-shell > .instructor-nav, .section-students-main { grid-row: 1; } }

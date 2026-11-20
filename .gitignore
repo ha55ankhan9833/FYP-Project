@@ -1,0 +1,62 @@
+# ======================================================================
+# Auto Test Case Generator FYP - never commit these (public repository)
+# Backend/.gitignore and Frontend/.gitignore add component-specific rules.
+# ======================================================================
+
+# Secrets, credentials and login tokens
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.token
+.tokens/
+
+# Hidden assessment data and E2E run state
+setup_state.json
+
+# Dependencies, virtual environments, caches and build output
+node_modules/
+dist/
+dist-ssr/
+.venv/
+.venv_ai/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Model weights and large artifacts
+models/
+*.safetensors
+*.bin
+*.pt
+*.onnx
+
+# Database files, backups and exports
+*.bak
+*.bacpac
+*.mdf
+*.ldf
+*.sqlite
+*.db
+*.csv
+*.xlsx
+
+# Browser verification profiles, screenshots and logs
+.verification/
+*.log
+chrome-verification-output.txt
+
+# Local backups (kept on the developer machine only)
+Backend_Backup_*/
+FYP_verified_evidence_backup/
+
+# Editors / OS / tool state
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.claude/

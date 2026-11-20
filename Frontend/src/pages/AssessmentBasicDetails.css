@@ -1,0 +1,43 @@
+.assessment-basic-page { background: #f7f9fb; }
+.assessment-basic-shell { padding: 24px 16px 108px; }
+.basic-page-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 20px; }
+.basic-page-header > a { display: grid; place-items: center; flex: 0 0 22px; min-height: 30px; color: #42516b; }
+.basic-page-header > a svg { width: 18px; height: 18px; }
+.basic-page-header h1 { margin: 0; font-size: 19px; line-height: 26px; letter-spacing: -.3px; }
+.basic-page-header p { margin: 0; font-size: 11px; line-height: 18px; color: #2161ff; overflow-wrap: anywhere; }
+.basic-step-indicator { display: inline-flex; align-items: center; gap: 7px; margin: 0 0 16px; padding: 3px 12px; background: #eff6ff; border: 1px solid #dceaff; border-radius: 20px; color: #2161ff; font-size: 12px; }
+.basic-step-indicator > span { font-size: 9px; }
+.basic-section-summary { margin-bottom: 16px; color: #637795; font-size: 12px; }
+.basic-section-summary summary { cursor: pointer; color: #2161ff; }
+.basic-section-summary ul { padding-left: 20px; overflow-wrap: anywhere; }
+.basic-type-toggle { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px; padding: 4px; margin-bottom: 18px; background: #f0f4f9; border: 1px solid #e3eaf4; border-radius: 13px; }
+.basic-type-toggle button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 34px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: #637795; font: inherit; font-size: 12px; cursor: pointer; }
+.basic-type-toggle button[aria-pressed=true] { border-color: #dce5f2; background: white; color: #2161ff; box-shadow: 0 1px 2px #17223808; }
+.basic-type-toggle svg { width: 14px; height: 14px; }
+.basic-field { margin-bottom: 16px; min-width: 0; }
+.basic-field label { display: block; margin-bottom: 6px; color: #26344b; font-size: 12px; line-height: 18px; font-weight: 600; }
+.basic-required { color: #ed4763; }
+.basic-label-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.basic-label-row > span { color: #8ca1bd; font-size: 10px; }
+.assessment-basic-form input, .assessment-basic-form textarea { display: block; width: 100%; min-width: 0; padding: 10px 13px; border: 1px solid #dce5f2; border-radius: 13px; background: white; color: #172238; font: inherit; font-size: 12px; line-height: 19px; }
+.assessment-basic-form textarea { resize: vertical; min-height: 44px; background: #fafbfd; white-space: pre-wrap; }
+.assessment-basic-form input { min-height: 40px; box-shadow: 0 1px 2px #17223806; }
+.assessment-basic-form input:focus, .assessment-basic-form textarea:focus { outline: 2px solid #2161ff; outline-offset: 2px; }
+.assessment-basic-form [aria-invalid=true] { border-color: #ba3030; }
+.basic-course-control, .basic-marks-control { position: relative; }
+.basic-course-control input, .basic-marks-control input { padding-right: 40px; }
+.basic-course-control > svg, .basic-marks-control > span { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: #8ca1bd; font-size: 12px; pointer-events: none; }
+.basic-description-card { padding: 16px; margin-bottom: 16px; border: 1px solid #dfe7f2; border-radius: 17px; background: white; box-shadow: 0 2px 3px #17223806; }
+.assessment-basic-page .basic-description-card h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding-bottom: 12px; border-bottom: 1px solid #edf1f7; font-size: 13px; line-height: 20px; }
+.basic-description-card h2 > span { display: grid; place-items: center; width: 24px; height: 24px; background: #eff6ff; border-radius: 7px; }
+.basic-description-card h2 svg { width: 17px; height: 17px; color: #2161ff; }
+.basic-description-card .basic-field:last-child { margin-bottom: 0; }
+.basic-description-card label { font-size: 11px; font-weight: 500; }
+.basic-description-card textarea { font-size: 11px; }
+.basic-description-card #basic-sampleInput, .basic-description-card #basic-sampleOutput { font-family: ui-monospace, Consolas, monospace; }
+.basic-field-error { color: #a42525; font-size: 12px; line-height: 18px; margin: 5px 0 0; }
+.basic-continue { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; padding: 10px 14px; border: 0; border-radius: 12px; background: #2861f4; box-shadow: 0 3px 6px #2161ff29; color: white; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.basic-discard { display: block; min-height: 40px; margin: 12px auto 0; padding: 8px 14px; border: 0; background: transparent; color: #637795; font: inherit; font-size: 12px; cursor: pointer; }
+.basic-loading { color: #687d9b; }
+@media (min-width: 768px) { .assessment-basic-shell { padding: 32px 36px 112px; } .basic-page-header h1 { font-size: 26px; line-height: 34px; } .basic-description-card { padding: 22px; } .assessment-basic-form input, .assessment-basic-form textarea { font-size: 14px; } .basic-field label { font-size: 13px; } .basic-description-card label { font-size: 12px; } }
+@media (min-width: 1024px) { .assessment-basic-shell { padding: 36px 40px 48px; grid-template-rows: auto; } .assessment-basic-shell > .instructor-nav, .assessment-basic-main { grid-row: 1; } }

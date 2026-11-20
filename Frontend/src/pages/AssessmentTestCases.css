@@ -1,0 +1,46 @@
+.assessment-tests-page { background: #f7f9fb; }
+.assessment-tests-shell { padding: 20px 20px 112px; }
+.tests-back { display: grid; place-items: center; width: 32px; height: 36px; margin-bottom: 14px; color: #42516b; }
+.tests-back svg { width: 20px; height: 20px; }
+.tests-step { display: inline-block; margin: 0 0 10px; padding: 4px 10px; border-radius: 18px; background: #eef5ff; color: #2161ff; font-size: 12px; }
+.tests-context,.tests-section-context { margin: 0 0 12px; color: #687d9b; font-size: 12px; overflow-wrap: anywhere; }
+.tests-section-context summary { cursor: pointer; }
+.tests-card { margin-bottom: 14px; padding: 18px 16px; border: 1px solid #e0e8f2; border-radius: 17px; background: #fff; box-shadow: 0 2px 3px #17223808; min-width: 0; overflow-wrap: anywhere; }
+.tests-summary-heading,.tests-case header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.assessment-tests-page h1,.assessment-tests-page h2 { margin: 0; font-size: 15px; line-height: 22px; }
+.tests-summary-heading h1 { display: flex; align-items: center; gap: 10px; }
+.tests-summary-heading h1 > span { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 7px; color: #009b74; background: #effbf6; font-size: 23px; }
+.tests-count { padding: 2px 9px; border: 1px solid #dce5f2; border-radius: 16px; color: #687d9b; font-size: 11px; }
+.tests-count.has-cases { color: #00896b; border-color: #b8f0dc; background: #effbf6; }
+.tests-card > p,.tests-blockers p { color: #687d9b; font-size: 12px; line-height: 20px; margin: 10px 0; }
+.tests-marks { padding-top: 10px; border-top: 1px solid #edf1f7; color: #2161ff; font-size: 12px; }
+.tests-note { color: #687d9b; font-size: 11px; line-height: 18px; overflow-wrap: anywhere; }
+.tests-blockers ul { padding-left: 18px; margin-bottom: 12px; }
+.tests-blockers li { margin-bottom: 12px; font-size: 12px; }
+.tests-blockers li p { margin: 4px 0; }
+.tests-blockers a { font-size: 12px; }
+.tests-case { padding-bottom: 12px; }
+.tests-case header > span { color: #2161ff; font-size: 12px; font-weight: 600; }
+.tests-input { padding: 12px; margin: 12px 0; background: #f8fafc; border: 1px solid #e8eef6; border-radius: 13px; }
+.tests-case h3 { margin: 0 0 10px; color: #8ca1bd; text-transform: uppercase; letter-spacing: .4px; font-size: 10px; }
+.tests-case pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.8 Consolas, monospace; tab-size: 4; }
+.tests-output { padding: 2px 0 12px; }
+.tests-case footer { display: flex; justify-content: flex-end; gap: 16px; border-top: 1px solid #edf1f7; padding-top: 8px; }
+.tests-case button { padding: 6px 0; background: none; border: 0; color: #2161ff; font: inherit; font-size: 12px; cursor: pointer; }
+.tests-case .tests-delete { color: #ce3542; }
+.tests-add,.tests-publish { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 48px; padding: 12px; border: 1px solid #2161ff; border-radius: 13px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.tests-add { color: #2161ff; background: #fff; margin-top: 16px; }
+.tests-publish { color: #fff; background: #2861f4; margin-top: 12px; box-shadow: 0 3px 5px #2161ff29; }
+.tests-add:disabled,.tests-publish:disabled { opacity: .55; cursor: not-allowed; }
+.tests-error { color: #b42332; font-size: 12px; }
+.tests-dialog-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; background: #17223866; }
+.tests-dialog { width: min(100%,500px); max-height: calc(100svh - 40px); overflow-y: auto; padding: 22px; border-radius: 17px; background: #fff; }
+.tests-dialog h2 { margin: 0 0 16px; font-size: 18px; }
+.tests-dialog label { display: block; margin: 12px 0; font-size: 12px; }
+.tests-dialog input,.tests-dialog textarea { display: block; width: 100%; margin-top: 6px; padding: 10px; border: 1px solid #dce5f2; border-radius: 9px; font: inherit; }
+.tests-dialog textarea { resize: vertical; white-space: pre-wrap; }
+.tests-dialog p { font-size: 12px; line-height: 20px; }
+.tests-dialog form > div,.tests-dialog > div { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.tests-dialog button { padding: 10px; border: 1px solid #dce5f2; border-radius: 8px; color: #2161ff; background: #eff6ff; cursor: pointer; }
+@media (min-width:768px) { .assessment-tests-shell { padding: 32px 36px 112px; } .tests-card { padding: 22px; } }
+@media (min-width:1024px) { .assessment-tests-shell { grid-template-rows: auto; padding: 36px 40px 48px; } .assessment-tests-shell > .instructor-nav,.assessment-tests-main { grid-row: 1; } }

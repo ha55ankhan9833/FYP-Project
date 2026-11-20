@@ -1,0 +1,35 @@
+.rubric-setup { color: #172238; }
+.rubric-card { min-width: 0; margin: 0 0 16px; padding: 18px 16px; background: white; border: 1px solid #e0e8f2; border-radius: 17px; box-shadow: 0 2px 3px #17223808; overflow-wrap: anywhere; }
+.rubric-setup .rubric-card h1 { margin: 0 0 12px; font-size: 23px; line-height: 30px; }
+.rubric-setup h2 { margin: 0 0 10px; font-size: 16px; line-height: 24px; }
+.rubric-setup h3 { margin: 0; font-size: 14px; }
+.rubric-setup .rubric-assessment-title { font-size: 17px; }
+.rubric-setup p,.rubric-setup li { color: #687d9b; font-size: 12px; line-height: 20px; }
+.rubric-setup label { display: block; margin: 12px 0; font-size: 12px; line-height: 20px; }
+.rubric-setup input:not([type=checkbox]),.rubric-setup textarea { display: block; width: 100%; min-width: 0; margin-top: 6px; padding: 11px 12px; border: 1px solid #dce5f2; border-radius: 11px; background: #f8fafc; color: #172238; font: inherit; }
+.rubric-setup textarea { resize: vertical; }
+.rubric-setup .rubric-reference { white-space: pre; font: 12px/1.6 Consolas,monospace; }
+.rubric-setup .rubric-check { display: flex; align-items: flex-start; gap: 9px; }
+.rubric-check input { margin-top: 4px; flex-shrink: 0; }
+.rubric-allocation { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin: 16px 0 0; }
+.rubric-allocation > div { min-width: 0; padding: 12px 6px; border-radius: 11px; background: #eff6ff; text-align: center; }
+.rubric-allocation dt { color: #687d9b; font-size: 10px; }
+.rubric-allocation dd { margin: 5px 0 0; color: #2161ff; font-size: 19px; font-weight: bold; overflow-wrap: anywhere; }
+.rubric-card-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.rubric-setup button { min-height: 38px; margin: 4px 6px 4px 0; padding: 8px 10px; border: 1px solid #d5e3fc; border-radius: 9px; background: #eff6ff; color: #2161ff; font: inherit; font-size: 12px; cursor: pointer; }
+.rubric-primary,.rubric-setup .rubric-primary { display: block; width: 100%; min-height: 48px; margin: 14px 0 0; border: 0; border-radius: 13px; padding: 12px; background: #2861f4; color: white; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.rubric-setup button:disabled,.rubric-primary:disabled { opacity: .55; cursor: not-allowed; }
+.rubric-setup .rubric-error,.rubric-setup .rubric-error p { color: #a32434; }
+.rubric-warnings,.rubric-new-suggestions { padding: 12px 14px 12px 26px; border-radius: 10px; background: #fff8e8; }
+.rubric-warnings li { color: #855912; }
+.rubric-new-suggestions { margin: 12px 0; padding: 14px; background: #eff6ff; }
+.rubric-criterion { margin: 14px 0; padding: 14px; border: 1px solid #e0e8f2; border-radius: 13px; }
+.rubric-setup .rubric-delete { color: #bf3040; background: #fff5f5; border-color: #f1dfe2; }
+.rubric-setup fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
+.rubric-setup .rubric-total { color: #2161ff; font-weight: bold; }
+.rubric-setup .rubric-help { font-size: 11px; line-height: 18px; }
+.rubric-input-summary { padding-left: 20px; }
+.rubric-setup details { margin: 12px 0; font-size: 12px; }
+.rubric-setup pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 Consolas,monospace; }
+.rubric-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media (min-width:768px) { .rubric-card { padding: 24px; } .rubric-allocation dd { font-size: 23px; } .rubric-allocation dt { font-size: 12px; } }

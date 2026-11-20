@@ -1,0 +1,29 @@
+.edit-case-page { background: #fff; }
+.edit-case-shell { padding: 28px 24px 112px; }
+.edit-case-main { width: 100%; max-width: 540px; justify-self: center; min-width: 0; color: #141e32; }
+.edit-case-main h1 { font-size: 17px; line-height: 24px; margin: 0 4px 24px; }
+.edit-case-main label,.edit-case-main legend { display: block; font-size: 13px; color: #3e506c; }
+.edit-case-main input,.edit-case-main textarea { box-sizing: border-box; display: block; width: 100%; min-width: 0; margin-top: 8px; border: 1px solid #dce5f2; border-radius: 12px; background: #fff; padding: 13px 14px; color: #141e32; font: inherit; font-size: 14px; line-height: 20px; }
+.edit-case-main textarea { font-family: Consolas, monospace; resize: vertical; white-space: pre-wrap; }
+.edit-case-main input:focus,.edit-case-main textarea:focus { outline: 2px solid #2161ff; outline-offset: 2px; }
+.edit-case-main fieldset { border: 0; padding: 0; margin: 24px 0 12px; min-width: 0; }
+.edit-case-main legend { margin-bottom: 12px; }
+.edit-case-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px 12px; }
+.edit-case-fields label { font-size: 12px; color: #687d9b; }
+.edit-case-wide { grid-column: 1 / -1; }
+.edit-case-raw { margin: 12px 0 28px; color: #687d9b; font: 11px/1.6 Consolas,monospace; overflow-wrap: anywhere; }
+.edit-case-raw summary { cursor: pointer; }
+.edit-case-raw pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.edit-case-output-label { display: flex !important; justify-content: space-between; gap: 12px; }
+.edit-case-output-label span { color: #2161ff; font-size: 12px; }
+.edit-case-format,.edit-case-note,.edit-case-notice { font-size: 12px; line-height: 19px; white-space: pre-wrap; overflow-wrap: anywhere; color: #687d9b; }
+.edit-case-notice { padding: 14px; border: 1px solid #dce5f2; border-radius: 12px; background: #f5f8ff; }
+.edit-case-error { color: #b42332; font-size: 12px; }
+.edit-case-update,.edit-case-cancel { width: 100%; min-height: 48px; border: 0; border-radius: 12px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.edit-case-update { margin-top: 24px; color: #fff; background: #265ff0; }
+.edit-case-update:disabled { opacity: .55; cursor: not-allowed; }
+.edit-case-cancel { margin-top: 8px; background: transparent; color: #141e32; }
+@media(min-width:1024px) { .edit-case-shell { padding-top: 40px; } .edit-case-main h1 { font-size: 22px; } }
+
+.edit-case-main .add-case-confirm { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; line-height: 19px; }
+.edit-case-main .add-case-confirm input { width: 17px; height: 17px; flex: 0 0 17px; margin: 2px 0 0; padding: 0; accent-color: #2161ff; }

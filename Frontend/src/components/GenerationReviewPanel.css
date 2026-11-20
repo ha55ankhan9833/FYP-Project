@@ -1,0 +1,22 @@
+.generation-review { margin-top: 20px; }
+.generation-panel,.generation-error { padding: 18px; border: 1px solid #dce5f2; background: white; border-radius: 16px; margin-bottom: 16px; overflow-wrap: anywhere; }
+.generation-review h2 { font-size: 16px; margin: 0 0 12px; }
+.generation-review h3 { font-size: 13px; margin: 16px 0 8px; }
+.generation-review p,.generation-review label { font-size: 12px; line-height: 20px; }
+.generation-review pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.7 Consolas,monospace; padding: 12px; border-radius: 10px; background: #f7f9fc; }
+.generation-review label { display: block; margin: 12px 0; }
+.generation-review input:not([type=checkbox]),.generation-review textarea { display: block; width: 100%; min-width: 0; margin-top: 6px; padding: 10px; border: 1px solid #dce5f2; border-radius: 9px; font: inherit; }
+.generation-review textarea { resize: vertical; font-family: Consolas,monospace; }
+.generation-review .generation-check { display: flex; align-items: flex-start; gap: 8px; }
+.generation-check input { flex-shrink: 0; margin-top: 4px; }
+.generation-review button,.generation-save { min-height: 40px; padding: 10px 12px; border: 1px solid #cbdcff; border-radius: 9px; color: #2161ff; background: #eff6ff; font: inherit; font-size: 12px; cursor: pointer; }
+.generation-review button:disabled,.generation-save:disabled { opacity: .5; cursor: not-allowed; }
+.generation-primary,.generation-save { margin-top: 14px; width: 100%; background: #2861f4!important; color: white!important; }
+.generation-review fieldset { min-width: 0; padding: 0; border: 0; margin-top: 16px; }
+.generation-review legend { font-weight: bold; font-size: 13px; }
+.generation-criterion { padding: 10px; border: 1px solid #edf1f7; border-radius: 10px; margin: 10px 0; }
+.generation-environment { padding: 12px; color: #365277; background: #eaf2ff; border-radius: 10px; font-size: 12px; line-height: 20px; }
+.generation-error { color: #a32434; white-space: pre-wrap; }
+.generation-note { color: #8a5a08; }
+.generation-hash { word-break: break-all; }
+.e2e-environment-banner { padding: 8px 16px; color: #774b00; background: #fff2cc; font: 12px/18px Arial,sans-serif; text-align: center; }

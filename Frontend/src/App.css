@@ -1,0 +1,38 @@
+.welcome { width: min(100%, 440px); margin-inline: auto; padding: 64px 24px 48px; }
+.brand { text-align: center; }
+.brand-icon { display: flex; align-items: center; justify-content: center; width: 80px; height: 80px; margin: 0 auto 24px; border-radius: 24px; color: white; background: #2161f5; box-shadow: 0 6px 10px -3px #2161f53b; }
+.brand-icon svg { width: 36px; height: 36px; stroke-width: 2.8; }
+.brand h1 { margin: 0; font-size: 25px; line-height: 1.3; font-weight: 700; letter-spacing: -.7px; }
+.brand h1 span { display: block; color: #2161ff; }
+.role-options { display: grid; gap: 16px; margin-top: 40px; }
+.role-card { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 18px 16px; border: 1px solid #e5e7ed; border-radius: 17px; color: inherit; text-decoration: none; box-shadow: 0 3px 7px #18223608, 0 9px 20px #18223603; transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease; }
+.role-icon { display: grid; place-items: center; width: 48px; height: 48px; flex-shrink: 0; border-radius: 13px; color: #2161ff; background: #eff6ff; }
+.role-copy { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.role-title { font-size: 16px; font-weight: 700; line-height: 1.3; }
+.role-description { font-size: 12px; line-height: 20px; color: #737d90; overflow-wrap: anywhere; }
+.role-arrow { flex-shrink: 0; color: #2161ff; width: 18px; height: 22px; }
+.placeholder { max-width: 560px; margin: 0 auto; padding: 80px 24px; }
+.placeholder h1 { font-size: 28px; }
+.placeholder p { line-height: 1.6; }
+.placeholder-label { color: #737d90; font-size: 13px; }
+.placeholder a { display: inline-block; margin-top: 16px; }
+@media (hover: hover) {
+  .role-card:hover { border-color: #aac5ff; box-shadow: 0 6px 20px #2161f512; transform: translateY(-2px); }
+}
+@media (min-width: 768px) {
+  .welcome { width: min(100%, 544px); min-height: 100svh; display: flex; flex-direction: column; justify-content: center; padding: 48px 32px; }
+  .brand h1 { font-size: 30px; }
+  .role-options { width: 100%; margin-top: 40px; gap: 20px; }
+  .role-card { padding: 23px 22px; gap: 18px; }
+  .role-description { font-size: 14px; line-height: 22px; }
+  .role-title { font-size: 18px; }
+  .role-icon { width: 52px; height: 52px; }
+}
+@media (min-width: 1024px) {
+  .brand-icon { width: 88px; height: 88px; border-radius: 26px; margin-bottom: 28px; }
+  .brand h1 { font-size: 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .role-card { transition: none; }
+  .role-card:hover { transform: none; }
+}
