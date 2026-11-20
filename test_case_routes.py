@@ -39,6 +39,21 @@ def _generation_body_error(body, allowed):
     return None
 
 
+def _marks_or_rubric_error(error):
+    """Coded responses for the equal-mark and rubric-approval save guards."""
+    from assessment_rubric_service import RubricNotApprovedError
+    from marks_allocation import MarksAllocationError
+
+    if isinstance(error, MarksAllocationError):
+        return jsonify({"status": "error", "code": "MARKS_ALLOCATION_INVALID",
+                        "message": error.message,
+                        "details": {"reason": error.code, **error.details}}), 422
+    if isinstance(error, RubricNotApprovedError):
+        return jsonify({"status": "error", "code": "RUBRIC_NOT_APPROVED",
+                        "message": str(error)}), 409
+    return None
+
+
 @test_case_bp.route(
     "/api/assessments/<int:assessment_id>/test-cases",
     methods=["GET"]
@@ -246,6 +261,10 @@ def generate_assessment_test_cases(assessment_id):
         }), 400
 
     except ValueError as error:
+        coded = _marks_or_rubric_error(error)
+        if coded is not None:
+            return coded
+
         message = str(error)
 
         if "access denied" in message or "Assessment not found" in message:
@@ -338,6 +357,9 @@ def generate_test_cases_from_oracle(assessment_id):
         }), 400
 
     except (OracleError, ValueError) as error:
+        coded = _marks_or_rubric_error(error)
+        if coded is not None:
+            return coded
         message = str(error)
         if "access denied" in message or "Assessment not found" in message:
             return jsonify({"status": "error",

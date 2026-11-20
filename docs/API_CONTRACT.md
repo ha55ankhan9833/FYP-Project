@@ -135,11 +135,12 @@ fields unchanged):
 | POST | `/api/assessments` | Required: `course_code, assessment_type, title, problem_statement, input_format, output_format, total_marks, deadline_at (local ISO, no tz, future), validation_percentage (0–100), draft_id`. Optional: `allow_late, late_penalty_marks, additional_constraints`. 201 `{assessment_id}` |
 | GET | `/api/assessments` | Own assessments |
 | GET | `/api/assessments/<id>` | Own assessment |
-| PUT | `/api/assessments/<id>` | Partial update. **New:** changing `total_marks`/`validation_percentage` → 409 if any submission exists, or if it would break an existing rubric (clear rubric first) |
+| PUT | `/api/assessments/<id>` | Partial update. **New:** changing `total_marks`/`validation_percentage` → 409 if any submission exists, or if it would break an existing rubric (clear rubric first). **2026-11-20:** 400 `MARKS_ALLOCATION_INVALID` for an inexact split; 409 `TEST_CASES_ALREADY_SAVED` if the value changes after test cases were saved |
 | DELETE | `/api/assessments/<id>` | 409 if sections/notifications/test cases exist |
 
 `validation_percentage` = share of marks for test cases; the rest is the rubric.
-Split rule: `test = round_half_up(total × pct / 100, 0.01)`, `rubric = total − test`.
+
+**Split rule (2026-11-20, exact):** `test = total × pct / 100`, `rubric = total − test`, `per case = test / 10`. Decimal, no rounding. POST and PUT return **400 `MARKS_ALLOCATION_INVALID`** (`details.reason`, `details.nearest_valid_percentages`) when `test` or `per case` would need more than 2 decimal places, e.g. 10 marks at 33.33%. Full contract: `docs/STEP1_3_GENERATION_CONTRACT.md` §7.
 
 ## Teacher — rubric (`dbo.AssessmentRubricCriterion` exists in both databases)
 
@@ -165,6 +166,21 @@ if allocation is 0 (100% validation) no criteria allowed.
 Errors: 400 validation, 404 not owner, **409 locked (submissions exist)**, 503 storage not enabled.
 
 ### `DELETE /api/assessments/<id>/rubric` — clear (only before submissions)
+
+## Teacher — dynamic rubric and equal test-case marks (NEW, 2026-11-20)
+
+Details, examples and the click sequence: `docs/STEP1_3_GENERATION_CONTRACT.md` §7. All of these need a teacher JWT; the teacher is always the token identity.
+
+| Method | Path | Body / query | Success | Errors |
+|---|---|---|---|---|
+| GET | `/api/marks-allocation` | `?total_marks=50&validation_percentage=60` | 200 `{allocation:{total_marks, validation_percentage, test_case_count, test_marks, per_case_marks, rubric_marks, rubric_required, formula}}`; no DB | 400 `INVALID_PARAMETER`, 403 `TEACHER_ONLY`, 422 `MARKS_ALLOCATION_INVALID` |
+| POST | `/api/assessments/<id>/rubric/suggest` | `{}` or `{validation_percentage}` | 200 `{suggestion:{status: GENERATED\|UNAVAILABLE\|NOT_REQUIRED, approved:false, allocation, criteria:[{criterion_name, description, suggested_marks, model_marks}], warnings:[{code, message}]}}`; read-only; `suggested_marks` sum exactly to `rubric_marks`; when the LLM is down, `status:UNAVAILABLE`, `criteria:[]` | 400 `INVALID_REQUEST`, 403, 404 `ASSESSMENT_NOT_FOUND`, 409 `CONSTRAINTS_NOT_APPROVED`, 422 `MARKS_ALLOCATION_INVALID`, 500 `RUBRIC_SUGGESTION_FAILED` |
+| POST | `/api/assessments/<id>/rubric/approve` | exactly `{validation_percentage, criteria:[{criterion_name, max_marks, description?}]}` | 200 `{rubric:{approved:true, unchanged, allocation, criteria_saved, criteria}}`; percentage + criteria saved atomically; identical retry → `unchanged:true`, no writes | 400 `INVALID_REQUEST`, 403, 404 `ASSESSMENT_NOT_FOUND`, 409 `RUBRIC_LOCKED` / `TEST_CASES_ALREADY_SAVED`, 422 `MARKS_ALLOCATION_INVALID` / `RUBRIC_TOTAL_MISMATCH` / `INVALID_CRITERION`, 503 `RUBRIC_STORAGE_UNAVAILABLE` |
+
+**Generation and readiness changes:**
+- The test-case save (both generation endpoints, `dry_run:false`) now requires an approved rubric (**409 `RUBRIC_NOT_APPROVED`**) and an exact equal share (**422 `MARKS_ALLOCATION_INVALID`**). All 10 rows get `per_case_marks`.
+- The save response adds `validation_percentage`, `rubric_marks_allocated` and `weighting:"EQUAL"`.
+- `generation-readiness` adds the `MARKS_ALLOCATION_INVALID` and `RUBRIC_NOT_APPROVED` codes and `checks.marks_allocation`.
 
 ## Teacher — section assignment (NEW)
 

@@ -24,7 +24,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from tests import fakes  # noqa: F401
-from tests.fakes import FakeConnection
+from tests.fakes import FakeConnection, approved_rubric_response
 
 from flask_jwt_extended import create_access_token
 
@@ -126,6 +126,9 @@ class StoreConnection(FakeConnection):
             if sql.startswith("SELECT reference_solution_id"):
                 return [(r["id"], r["source"], r["hash"], "cpp", "APPROVED")], -1
             return [(r["source"], r["hash"], "cpp", "APPROVED")], -1
+        if "AssessmentRubricCriterion" in sql:
+            a = s.assessments[p[0]] if p else None
+            return approved_rubric_response(sql, a and a["total"], a and a["validation"])
         if sql.startswith("SELECT COUNT(*) FROM dbo.TestCase"):
             return [(sum(t["assessment_id"] == p[0] for t in s.test_cases),)], -1
         if sql.startswith("INSERT INTO dbo.TestCase"):

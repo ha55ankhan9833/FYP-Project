@@ -8,6 +8,21 @@ if BACKEND not in sys.path:
     sys.path.insert(0, BACKEND)
 
 
+def approved_rubric_response(sql, total_marks, validation_percentage):
+    """Fake answer for the rubric-ready check secure saves now perform: an
+    approved rubric (one criterion) matching the allocation exactly.
+    Returns None when `sql` is not a rubric statement."""
+    if "AssessmentRubricCriterion" not in sql:
+        return None
+    if "OBJECT_ID" in sql:
+        return [(1,)], -1
+    if sql.startswith("SELECT rubric_criterion_id"):
+        from grading_allocation import split_allocation
+        _, rubric = split_allocation(total_marks, validation_percentage)
+        return ([(1, "Approved criterion", rubric, None)] if rubric > 0 else []), -1
+    raise AssertionError(f"unexpected rubric SQL: {sql}")
+
+
 class FakeCursor:
     def __init__(self, conn):
         self.conn = conn

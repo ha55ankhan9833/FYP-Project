@@ -316,6 +316,19 @@ def get_students():
 # TEACHER ONLY
 # --------------------------------
 
+from marks_allocation import MarksAllocationError, compute_allocation
+
+
+def _marks_allocation_response(error):
+    """400 when total marks x percentage cannot give 10 exact equal shares."""
+    return jsonify({
+        "status": "error",
+        "code": "MARKS_ALLOCATION_INVALID",
+        "message": error.message,
+        "details": {"reason": error.code, **error.details}
+    }), 400
+
+
 def _assessment_for_draft(conn, draft_id, teacher_id):
     """Owned assessment already linked to this teacher's draft, or None."""
     if conn is None:
@@ -460,6 +473,12 @@ def create_assessment():
                 data[field], str
             ):
                 raise ValueError(f"{field} must be text")
+
+        # Exact equal share for each of the 10 test cases (no rounding).
+        compute_allocation(total_marks, validation_percentage)
+
+    except MarksAllocationError as error:
+        return _marks_allocation_response(error)
 
     except (ValueError, TypeError, InvalidOperation) as error:
         return jsonify({
@@ -901,6 +920,32 @@ def update_assessment(assessment_id):
         # students have submitted, and must stay consistent with
         # any teacher-defined rubric.
         if "total_marks" in data or "validation_percentage" in data:
+            try:
+                compute_allocation(total_marks, validation)
+            except MarksAllocationError as error:
+                conn.rollback()
+                return _marks_allocation_response(error)
+
+            # Saved cases store total x percentage / 10 each; changing
+            # the allocation afterwards would leave them inconsistent.
+            cursor.execute(
+                "SELECT COUNT(*) FROM dbo.TestCase WHERE assessment_id = ?",
+                (assessment_id,))
+
+            if int(cursor.fetchone()[0]) > 0 and (
+                Decimal(str(total_marks)) != Decimal(str(existing[0]))
+                or Decimal(str(validation)) != Decimal(str(existing[3]))
+            ):
+                conn.rollback()
+                return jsonify({
+                    "status": "error",
+                    "code": "TEST_CASES_ALREADY_SAVED",
+                    "message": (
+                        "Marks allocation cannot change after test cases "
+                        "have been saved with equal marks"
+                    )
+                }), 409
+
             cursor.execute("""
                 SELECT COUNT(*)
                 FROM dbo.Submission AS s
@@ -1179,6 +1224,10 @@ app.register_blueprint(reference_solution_bp)
 # Teacher "My Sections" API (read-only, Instructor Dashboard / Select Section)
 from teacher_section_routes import teacher_section_bp
 app.register_blueprint(teacher_section_bp)
+
+# Teacher dynamic rubric: marks allocation, offline-LLM suggestion, approval
+from rubric_workflow_routes import rubric_workflow_bp
+app.register_blueprint(rubric_workflow_bp)
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

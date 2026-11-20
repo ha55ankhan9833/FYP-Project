@@ -13,7 +13,10 @@ real endpoint enforces:
                 bound to the reference hash (verified_oracles), exactly as
                 the generation endpoints decide
   test cases    test_case_policy.REQUIRED_TEST_CASE_COUNT
-  rubric        assessment_rubric_service.check_rubric_ready
+  rubric        assessment_rubric_service.check_rubric_ready (approved rubric is
+                required before generation as well as before publishing)
+  marks         marks_allocation.compute_allocation (exact equal 2-decimal
+                share for each of the 10 cases)
 """
 
 import hashlib
@@ -65,6 +68,7 @@ def _output_source(source_hash, input_schema, sandbox_available, trusted_hashes,
 def get_generation_readiness(assessment_id, teacher_id, connection_factory=get_connection,
                              sandbox_available=None, trusted_hashes=None, oracles=None):
     from assessment_rubric_service import check_rubric_ready
+    from marks_allocation import MarksAllocationError, compute_allocation
     from generic_test_inputs import parse_approved_value_constraints
     from test_case_approval_validator import validate_assessment_approval
     from test_case_policy import REQUIRED_TEST_CASE_COUNT
@@ -146,11 +150,22 @@ def get_generation_readiness(assessment_id, teacher_id, connection_factory=get_c
         if test_count:
             missing.append({"code": "TEST_CASES_ALREADY_EXIST"})
 
+        allocation = None
+        try:
+            allocation = compute_allocation(total_marks, validation_percentage)
+        except MarksAllocationError as error:
+            missing.append({"code": "MARKS_ALLOCATION_INVALID", "detail": error.message,
+                            "reason": error.code, **error.details})
+
         rubric_ready = True
         try:
             check_rubric_ready(cursor, assessment_id, total_marks, validation_percentage)
         except ValueError:
             rubric_ready = False
+        if not rubric_ready:
+            missing.append({"code": "RUBRIC_NOT_APPROVED",
+                            "detail": "Approve rubric criteria summing exactly to the "
+                                      "rubric allocation before generating"})
 
         cursor.execute(SECTION_COUNT_SQL, (assessment_id,))
         section_count = int(cursor.fetchone()[0])
@@ -179,6 +194,7 @@ def get_generation_readiness(assessment_id, teacher_id, connection_factory=get_c
             "test_case_count": test_count,
             "required_test_case_count": REQUIRED_TEST_CASE_COUNT,
             "rubric_ready": rubric_ready,
+            "marks_allocation": allocation,
             "assigned_section_count": section_count,
         },
     }

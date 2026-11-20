@@ -10,7 +10,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.fakes import BACKEND, FakeConnection
+from tests.fakes import BACKEND, FakeConnection, approved_rubric_response
 
 from flask_jwt_extended import create_access_token
 
@@ -224,6 +224,9 @@ class SecureSaveWithOracleCasesTests(unittest.TestCase):
                                              "text": "1 <= N <= 1000000"}]})
 
         def respond(sql, params):
+            rubric = approved_rubric_response(sql, "10.00", "50.00")
+            if rubric is not None:
+                return rubric
             if sql.startswith("SELECT total_marks, value_constraints"):
                 return [("10.00", "1 <= N <= 1000000", "", "50.00")], -1
             if "FROM dbo.ConstraintReviewDraft" in sql:

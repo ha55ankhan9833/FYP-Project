@@ -41,6 +41,10 @@ class RubricNotFoundError(ValueError):
     """Assessment not found or not owned by this teacher."""
 
 
+class RubricNotApprovedError(ValueError):
+    """Test cases cannot be saved before the teacher approves the rubric."""
+
+
 TABLE_EXISTS_SQL = """
 SELECT CASE WHEN OBJECT_ID(N'dbo.AssessmentRubricCriterion', N'U')
             IS NULL THEN 0 ELSE 1 END;
@@ -262,6 +266,20 @@ def check_rubric_ready(cursor, assessment_id, total_marks,
     return True
 
 
+def rubric_ready_for_generation(cursor, assessment_id, total_marks,
+                                validation_percentage):
+    """True when the teacher-approved rubric matches the allocation (or no
+    rubric marks are allocated). Without rubric storage the pre-rubric
+    behaviour is kept (True)."""
+
+    try:
+        check_rubric_ready(cursor, assessment_id, total_marks,
+                           validation_percentage)
+    except ValueError:
+        return False
+    return True
+
+
 # ------------------------------------------------------------------
 # Connection-level operations
 # ------------------------------------------------------------------
@@ -403,6 +421,148 @@ def replace_assessment_rubric(assessment_id, teacher_id, criteria,
         conn.rollback()
         raise
 
+    finally:
+        conn.close()
+
+
+class RubricApprovalError(ValueError):
+    """Coded rejection from approve_assessment_rubric."""
+
+    def __init__(self, code, message, details=None, status=422):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = details or {}
+        self.status = status
+
+
+LOCK_FOR_APPROVAL_SQL = """
+SELECT total_marks, validation_percentage
+FROM dbo.Assessment WITH (UPDLOCK, HOLDLOCK)
+WHERE assessment_id = ? AND teacher_id = ?;
+"""
+
+COUNT_TEST_CASES_LOCK_SQL = """
+SELECT COUNT(*) FROM dbo.TestCase WITH (UPDLOCK, HOLDLOCK)
+WHERE assessment_id = ?;
+"""
+
+UPDATE_PERCENTAGE_SQL = """
+UPDATE dbo.Assessment SET validation_percentage = ?
+WHERE assessment_id = ? AND teacher_id = ?;
+"""
+
+
+def _same_rubric(existing, normalized):
+    key = lambda c: (c["criterion_name"], Decimal(c["max_marks"]),  # noqa: E731
+                     c["description"] or None)
+    return [key(c) for c in existing] == [key(c) for c in normalized]
+
+
+def approve_assessment_rubric(assessment_id, teacher_id, validation_percentage,
+                              criteria, connection_factory=get_connection):
+    """
+    The teacher's explicit approval of the final rubric and test-case
+    allocation, in one transaction:
+      exact equal-share allocation (marks_allocation) -> criteria validated,
+      summing exactly to rubric_marks -> refused after submissions, and
+      refused when the percentage would change after test cases were saved
+      -> validation_percentage updated and criteria replaced atomically.
+    An identical retry writes nothing (unchanged=True); criteria are always
+    replaced, never appended, so retries cannot create duplicates.
+    """
+    from marks_allocation import MarksAllocationError, compute_allocation
+
+    teacher_id = _require_identity(assessment_id, teacher_id)
+    if criteria is None:
+        criteria = []
+    if not isinstance(criteria, list):
+        raise RubricApprovalError("INVALID_REQUEST", "criteria must be a list", status=400)
+
+    conn = connection_factory()
+    try:
+        conn.autocommit = False
+        cursor = conn.cursor()
+
+        if not rubric_table_exists(cursor):
+            raise RubricStorageUnavailable(
+                "AssessmentRubricCriterion table has not been created")
+
+        cursor.execute(LOCK_FOR_APPROVAL_SQL, (assessment_id, teacher_id))
+        row = cursor.fetchone()
+        if row is None:
+            raise RubricNotFoundError("Assessment not found")
+        stored_total = Decimal(str(row[0]))
+        stored_pct = Decimal(str(row[1]))
+
+        try:
+            allocation = compute_allocation(stored_total, validation_percentage)
+        except MarksAllocationError as error:
+            raise RubricApprovalError("MARKS_ALLOCATION_INVALID", error.message,
+                                      {"reason": error.code, **error.details})
+        rubric_marks = Decimal(allocation["rubric_marks"])
+        new_pct = Decimal(allocation["validation_percentage"])
+
+        # Lock checks first, so the refusal names the real reason.
+        cursor.execute(COUNT_SUBMISSIONS_SQL, (assessment_id,))
+        if int(cursor.fetchone()[0]) > 0:
+            raise RubricLockedError("Rubric cannot change after students have submitted")
+
+        cursor.execute(COUNT_TEST_CASES_LOCK_SQL, (assessment_id,))
+        test_cases = int(cursor.fetchone()[0])
+        if test_cases and new_pct != stored_pct:
+            raise RubricApprovalError(
+                "TEST_CASES_ALREADY_SAVED",
+                "The test-case percentage cannot change after test cases were saved "
+                f"(saved with {stored_pct}%)", {"saved_validation_percentage": str(stored_pct)},
+                status=409)
+
+        try:
+            normalized = normalize_rubric_input(criteria, rubric_marks)
+        except ValueError as error:
+            total = None
+            if isinstance(criteria, list) and all(isinstance(c, dict) for c in criteria):
+                try:
+                    total = str(sum((to_mark(c.get("max_marks"), "max_marks")
+                                     for c in criteria), Decimal("0")))
+                except ValueError:
+                    total = None
+            code = ("RUBRIC_TOTAL_MISMATCH" if "must equal the rubric allocation" in str(error)
+                    or "no rubric criteria are allowed" in str(error)
+                    or "At least one rubric criterion" in str(error)
+                    else "INVALID_CRITERION")
+            raise RubricApprovalError(code, str(error), {
+                "rubric_marks": allocation["rubric_marks"], "criteria_total": total,
+                "allocation": allocation})
+
+        existing = load_rubric_rows(cursor, assessment_id)
+        unchanged = new_pct == stored_pct and _same_rubric(existing, normalized)
+
+        if not unchanged:
+            if new_pct != stored_pct:
+                cursor.execute(UPDATE_PERCENTAGE_SQL, (new_pct, assessment_id, teacher_id))
+            cursor.execute(DELETE_RUBRIC_SQL, (assessment_id,))
+            for item in normalized:
+                cursor.execute(INSERT_CRITERION_SQL, (
+                    assessment_id, item["criterion_name"], item["max_marks"],
+                    item["description"]))
+            conn.commit()
+            saved = normalized
+        else:
+            conn.rollback()
+            saved = existing
+
+        return {
+            "assessment_id": assessment_id,
+            "approved": True,
+            "unchanged": unchanged,
+            "allocation": allocation,
+            "criteria_saved": len(saved),
+            "criteria": [serialize_criterion(c) for c in saved],
+        }
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 

@@ -113,4 +113,6 @@ def generate_from_verified_oracle(
     return {**summary,
             "saved_count": saved["saved_count"],
             "marks_per_test": saved["marks_per_test"],
-            "test_marks_allocated": saved["test_marks_allocated"]}
+            "test_marks_allocated": saved["test_marks_allocated"],
+            **{k: saved[k] for k in ("validation_percentage", "rubric_marks_allocated",
+                                     "weighting") if k in saved}}

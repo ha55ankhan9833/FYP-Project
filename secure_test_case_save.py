@@ -1,8 +1,10 @@
 import hashlib
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 
 from db import get_connection
-from grading_allocation import split_allocation
+from assessment_rubric_service import (
+    RubricNotApprovedError, rubric_ready_for_generation)
+from marks_allocation import compute_allocation
 from test_case_approval_validator import validate_assessment_approval
 from test_case_validator import structured_input_key, validate_generated_test_cases
 
@@ -168,14 +170,17 @@ def save_generated_test_cases_secure(
         if not total_marks.is_finite() or total_marks <= 0:
             raise ValueError("Invalid total marks")
 
-        # Equal weight: every row stores the same display value.
-        # Grading never reads this column; it always uses
-        # (passed / total) x test allocation (grading_allocation.py).
-        test_marks_allocated, _ = split_allocation(
-            total_marks, validation_percentage)
-        marks_per_test = (
-            test_marks_allocated / Decimal(len(test_cases))
-        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        # Equal weight: every row stores exactly test_marks / 10. The share
+        # must be exact at the column's 2 decimal places; otherwise the save
+        # is refused (MarksAllocationError) rather than rounded, so the 10
+        # rows always sum to the allocation. Grading never reads this column;
+        # it uses (passed / total) x test allocation (grading_allocation.py).
+        allocation = compute_allocation(total_marks, validation_percentage,
+                                        len(test_cases))
+        test_marks_allocated = Decimal(allocation["test_marks"])
+        marks_per_test = Decimal(allocation["per_case_marks"])
+        if marks_per_test * len(test_cases) != test_marks_allocated:
+            raise ValueError("Equal test-case marks do not sum to the allocation")
 
         cursor.execute("""
             SELECT COUNT(*)
@@ -185,6 +190,13 @@ def save_generated_test_cases_secure(
 
         if int(cursor.fetchone()[0]) != 0:
             raise ValueError("Assessment already has test cases")
+
+        # The approved rubric fixes the allocation the cases are saved with.
+        if not rubric_ready_for_generation(cursor, assessment_id, total_marks,
+                                           validation_percentage):
+            raise RubricNotApprovedError(
+                "Approve the rubric (criteria summing exactly to "
+                f"{allocation['rubric_marks']} rubric marks) before saving test cases")
 
         for case in test_cases:
             marks = marks_per_test
@@ -215,7 +227,9 @@ def save_generated_test_cases_secure(
             "reference_solution_id": reference_solution_id,
             "saved_count": len(test_cases),
             "total_marks": str(total_marks),
+            "validation_percentage": allocation["validation_percentage"],
             "test_marks_allocated": str(test_marks_allocated),
+            "rubric_marks_allocated": allocation["rubric_marks"],
             "marks_per_test": str(marks_per_test),
             "weighting": "EQUAL"
         }

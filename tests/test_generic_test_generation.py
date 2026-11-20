@@ -12,7 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.fakes import FakeConnection, BACKEND
+from tests.fakes import FakeConnection, BACKEND, approved_rubric_response
 
 from flask_jwt_extended import create_access_token
 
@@ -287,6 +287,9 @@ def save_responder(owned=True, existing=0, stored_hash=None, source="SRC",
     digest = hashlib.sha256(source.encode()).hexdigest()
 
     def responder(sql, params):
+        rubric = approved_rubric_response(sql, "10.00", "50.00")
+        if rubric is not None:
+            return rubric
         if sql.startswith("SELECT total_marks, value_constraints"):
             return ([("10.00", "1 <= N <= 1000000", code_constraints, "50.00")]
                     if owned else []), -1
