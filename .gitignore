@@ -53,6 +53,15 @@ data_prepared/
 dev_tools/reports/
 reports/
 
+# --- E2E run state (IDs and copies of hidden test cases) --------------
+setup_state.json
+fixtures/*_e2e/
+
+# --- Internal audit notes with staff names (kept local only) ----------
+docs/section_assignment/
+docs/FINAL_BACKEND_AUDIT.md
+docs/M3_MIGRATION_PREFLIGHT.md
+
 # --- Database exports, backups and dumps ------------------------------
 *.bak
 *.bacpac

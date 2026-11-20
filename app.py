@@ -1205,6 +1205,9 @@ def delete_assessment(assessment_id):
 from student_submission_routes import student_submission_bp
 app.register_blueprint(student_submission_bp)
 
+from student_assessment_routes import student_assessment_bp
+app.register_blueprint(student_assessment_bp)
+
 # Teacher rubric management API
 from assessment_rubric_routes import rubric_bp
 app.register_blueprint(rubric_bp)

@@ -208,7 +208,7 @@ A teacher can assign their assessment only to sections where
 |---|---|---|---|
 | GET | `/api/assessments/<id>/assignable-sections` | — | 200 `{course_code, total, sections:[{section_id, section_name, semester_no, program, academic_session, enrolled_students, already_assigned}]}` · 404 not owner |
 | GET | `/api/assessments/<id>/sections` | — | 200 `{total, sections:[{assessment_section_id, section_id, section_name, semester_no, program, academic_session, enrolled_students, submission_count, removable}]}` · 404 |
-| POST | `/api/assessments/<id>/sections` | `{"section_ids": ["SEC-A", "SEC-B"]}` (1–50, ≤20 chars, no duplicates) | 201 `{assessment_id, course_code, assigned:[{assessment_section_id, section_id}], deadline_at}` · **all-or-nothing**: on any problem nothing is saved and the body has `errors:[{section_id, reason}]` with status 404 `SECTION_NOT_FOUND` › 403 `TEACHER_NOT_ASSIGNED_TO_SECTION` › 409 `ALREADY_ASSIGNED` · 400 validation · 404 not owner · **409 `ASSESSMENT_NOT_READY` (publishing guard, 2026-11-20)** `missing:[{code, detail}]` with `TEST_CASES_NOT_GENERATED` (not exactly 10 saved test cases) and/or `RUBRIC_INCOMPLETE` (criteria do not add up to the rubric allocation). The guard is checked before any section, and nothing is written. |
+| POST | `/api/assessments/<id>/sections` | `{"section_ids": ["SEC-A", "SEC-B"]}` (1–50, at most 20 chars, no duplicates) | 201 if new assignments created; 200 identical replay. Atomic publishing with teacher/section/course authorization and shared readiness checks. See Secure publication contract below for exact fields and errors. |
 | DELETE | `/api/assessments/<id>/sections/<section_id>` | — | 200 `{removed:true}` · 409 if any submission exists for that section · 404 not assigned / not owner |
 
 ## Teacher — my sections (NEW, 2026-11-19, read-only)
@@ -552,3 +552,122 @@ The published breakdown therefore never contradicts `final_score`.
 Recommended polling for submission status: every 10–15 s while `SUBMITTED`/`GRADING`.
 With execution disabled, real submissions remain `SUBMITTED` until the teacher
 uses the manual grading fallback (`outcome: "MANUALLY_GRADED"`).
+
+## Secure publication and student visibility (2026-11-20)
+
+Publishing **is section assignment**; there is no separate publish flag or new publishing endpoint.
+`POST /api/assessments/{id}/sections` requires a teacher Bearer JWT. Body contains
+only `section_ids` (1–50 nonempty section IDs, maximum 20 characters each, case-insensitive
+duplicates rejected). Teacher identity always comes from JWT.
+
+```json
+{"section_ids":["SEC000003","SEC000056"]}
+```
+
+The transaction locks the teacher-owned Assessment, applies the same publication policy as
+`GET /api/assessments/{id}/generation-readiness`, validates **every** requested section before
+any insert, then inserts only missing AssessmentSection rows. Checks require:
+
+- Stored `assessment_type` is exactly `Assignment` or `Quiz`; no conversion is performed.
+- Exactly ten case positions 1–10; nonempty saved expected outputs; equal marks matching
+  the exact backend allocation (no rounding).
+- A finalized, teacher-approved constraint draft matching the assessment; every saved
+  input validates against that approved schema/range and has no duplicate input.
+- Available rubric storage and an approved/complete rubric, with exact allocation totals.
+  In this existing schema, approved rubric criteria are the rows persisted by teacher rubric
+  PUT/approve APIs; there is no separate rubric approval-status column. A zero rubric allocation
+  requires no criteria. No new approval, generation or execution occurs during publication.
+- Section_Export contains each requested section and SectionCourseTeacher links that section,
+  assessment owner and course. Section IDs identify stored semester/session records. Assessment
+  has no separate semester/session fields, so no client-supplied session is invented or trusted.
+
+**Success:** 201 when rows were created; 200 when all requested rows already existed.
+The response is emitted only after commit succeeds. Example field shape (values illustrative):
+
+```json
+{
+  "status":"success","message":"Sections published",
+  "assessment_id":123,"title":"Reviewed assignment","assessment_type":"Assignment",
+  "course_code":"CSC-101","course_name":"PROGRAMMING FUNDAMENTALS",
+  "total_marks":"20.00","deadline_at":"2030-01-01T23:59:00",
+  "publishing_status":"PUBLISHED","requested_section_ids":["SEC000003"],
+  "published_section_ids":["SEC000003"],
+  "assigned":[{"assessment_section_id":10,"section_id":"SEC000003"}],
+  "unchanged":[],"replayed":false
+}
+```
+
+`assigned` contains newly created rows; `unchanged` contains requested existing rows.
+`published_section_ids` is the full confirmed existing assignment set. Requests are additive:
+previously published sections are retained, never silently removed. On a fresh assessment
+only requested sections are published. A retry containing old and new IDs inserts only the new
+IDs, after rechecking authorization for all IDs. No duplicate assignments are produced.
+The existing unique constraint remains a final race guard. Every failure rolls back the entire
+request; there is no partial-success response. Course name can be null if the export has no match.
+
+Errors have `{status:"error",message,code}` with safe details:
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 401 / 422 | existing JWT codes | Missing/expired/invalid JWT |
+| 403 | TEACHER_ONLY | Student cannot publish |
+| 400 | INVALID_REQUEST | Malformed/extra body fields or invalid/duplicate IDs |
+| 404 | ASSESSMENT_NOT_FOUND | Missing assessment or not its owner (same response) |
+| 403 / 404 | SECTION_ASSIGNMENT_REJECTED | `errors:[{section_id,reason}]`; reasons TEACHER_NOT_ASSIGNED_TO_SECTION / SECTION_NOT_FOUND |
+| 409 | ASSESSMENT_NOT_READY | `missing:[{code,detail?}]`; no writes |
+| 409 | PUBLISH_CONFLICT | Unexpected unique-constraint race; safely retry/read assigned sections |
+| 500 | PUBLISH_UNAVAILABLE | Database/commit failure; no success claimed; read confirmed sections before retry |
+
+Readiness missing codes: ASSESSMENT_TYPE_UNSUPPORTED, MARKS_ALLOCATION_INVALID,
+TEST_CASES_NOT_GENERATED, TEST_CASES_INVALID, TEST_CASES_NOT_VALIDATED, RUBRIC_INCOMPLETE.
+Saved outputs are not generated/replaced here. Their trusted origin is enforced by the existing
+secure generation/save APIs; the current TestCase schema has no per-row verification attestation.
+Direct out-of-band SQL edits cannot be cryptographically proven from these rows alone.
+
+### Student access
+
+Student email/password authentication and student JWTs already exist at `/api/student/login`.
+The existing `GET /api/student/assessments` is retained, including `has_submitted` and
+`open_for_submissions` fields. No query parameters (especially student_id) are accepted.
+It returns `{status:"success",total,assessments:[...]}`; draft/unpublished or unenrolled
+assessments are excluded. Both types retain their stored `Assignment`/`Quiz` value.
+
+**New:** `GET /api/student/assessments/{id}` (student JWT, no query parameters).
+Success: `{status:"success",assessment:{assessment_id,assessment_type,title,course_code,
+course_name,total_marks,deadline_at,allow_late,late_penalty_marks,problem_statement,
+input_format,output_format,publishing_status:"PUBLISHED"}}`.
+Decimal fields are strings and the deadline is an ISO local datetime (or null if stored null).
+
+List and detail use the authenticated student's ID, a real Student_Export row, a matching
+Enrollment_Export(section_id,course_no), a published AssessmentSection row, and the current
+SectionCourseTeacher(section_id,teacher_id,course_no) mapping. Detail independently checks
+these predicates; modifying an assessment ID cannot bypass listing authorization.
+An inaccessible, unpublished, missing or unsupported-type detail returns identical
+404 `ASSESSMENT_NOT_FOUND`. Teacher JWT: 403 `STUDENT_ONLY`. Extra query parameters:
+400 `INVALID_PARAMETER`. Database failure: 500 `ASSESSMENTS_UNAVAILABLE` for detail
+(existing list retains its existing error contract). Missing/expired/invalid JWT uses shared
+401/422 handling. There is no anonymous access.
+
+Existing `POST /api/assessments/{id}/submissions` independently rechecks JWT student identity,
+Student_Export, published section/course enrollment, teacher allocation and deadline inside
+its transaction. It rejects client-supplied student_id, duplicate submissions and unassigned
+sections. These checks were preserved. Existing student submission/result endpoints remain.
+Student payloads never select saved TestCase inputs/outputs, reference source, raw draft data,
+AI generation metadata or teacher-only rubric criteria. Teacher test-case/reference/rubric APIs
+remain teacher-only. Assessment output-format instructions are public; hidden answer rows are not.
+
+### Verification and remaining portal blockers
+
+`tests/test_secure_publication.py`, updated section/readiness tests and the existing in-memory
+student/grading flow cover one/multiple sections, ownership, guessed/unpublished IDs, duplicates,
+failed publication rollback, marks/schema/rubric checks, type preservation and hidden-data guards.
+No real credentials or SQL Server connections are used by these isolated tests.
+
+`dev_tools/verify_publication_e2e.py --allow-rollback-writes` explicitly connects only to
+FYP_E2E_Test, asserts DB_NAME before writes, uses existing assessments/teachers/students,
+suppresses service commits, and rolls back all changes. It checks final table counts.
+The available copy has one allocated enrolled section and no unrelated section/outsider student;
+real-SQL multi-section and outsider scenarios remain unverified (covered by isolated fixtures).
+It is not a concurrent/committed HTTP E2E test. No FYP_Database writes or migrations are performed.
+Frontend publish wiring/success screen/student portal are outside this backend-only task;
+no UI behavior is claimed. Arbitrary C++ execution remains disabled and is never invoked.

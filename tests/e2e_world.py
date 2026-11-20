@@ -65,7 +65,7 @@ class World:
                     ("SEC000003", "BIIT999", "CSC-101")}
         self.assessment = {
             "assessment_id": 5, "teacher_id": "BIIT235", "course_code": "CSC-101",
-            "assessment_type": "Lab", "title": "Prime Number Check",
+            "assessment_type": "Assignment", "title": "Prime Number Check",
             "problem": "Print YES if N is prime, otherwise NO.",
             "input_format": "One integer N", "output_format": "YES or NO",
             "total": Decimal("10.00"), "val": Decimal("50.00"),
@@ -148,7 +148,23 @@ class World:
         a = self.assessment
         ok = p[0] == a["assessment_id"] and p[1] == a["teacher_id"]
         return ([(a["assessment_id"], a["course_code"], a["deadline"],
-                  a["allow_late"], a["total"], a["val"])] if ok else []), -1
+                  a["allow_late"], a["total"], a["val"], a["title"], a["assessment_type"], "Fixture course")] if ok else []), -1
+
+    def publication_cases(self, conn, p):
+        return [(t[0], t[3], t[4], self.assessment["total"]*self.assessment["val"]/100/10) for t in self.tests], -1
+
+    def publication_draft(self, conn, p):
+        a=self.assessment
+        draft={"finalized":True,"approval":{"value":True,"code":True},"constraints":[{"category":"value","review_status":"ACCEPTED","text":a["value_constraints"]}]}
+        if a["code_constraints"]:
+            draft["constraints"].append({"category":"code","review_status":"ACCEPTED","text":a["code_constraints"]})
+        return [(json.dumps(draft),1)], -1
+
+    def publication_constraints(self, conn, p):
+        return [(self.assessment["value_constraints"], self.assessment["code_constraints"])], -1
+
+    def published_sections(self, conn, p):
+        return [(section,) for aid, section in self.asec.values() if aid==p[0]], -1
 
     def count_test_cases(self, conn, p):
         return [(len(self.tests) if p[0] == self.assessment["assessment_id"] else 0,)], -1
@@ -512,13 +528,17 @@ class World:
 
     # Order matters: the more specific fragment first.
     HANDLERS = [
+        ("SELECT test_number, input_data, expected_output, marks", publication_cases),
+        ("FROM dbo.ConstraintReviewDraft WITH (UPDLOCK, HOLDLOCK) WHERE assessment_id", publication_draft),
+        ("SELECT value_constraints, code_constraints FROM dbo.Assessment", publication_constraints),
+        ("SELECT section_id FROM dbo.AssessmentSection WITH (HOLDLOCK)", published_sections),
         ("FROM Teacher_Export WHERE teacher_email = ?", teacher_login),
         ("FROM Student_Export WHERE student_email = ?", student_login),
         ("SELECT assessment_id, course_code, deadline_at, allow_late, total_marks, "
-         "validation_percentage FROM dbo.Assessment", owned_assessment),
+         "validation_percentage, title, assessment_type,", owned_assessment),
         ("SELECT COUNT(*) FROM dbo.TestCase WITH (HOLDLOCK) WHERE assessment_id = ?",
          count_test_cases),
-        ("FROM dbo.Section_Export WHERE section_id = ?", section_exists),
+        ("FROM dbo.Section_Export WITH (HOLDLOCK) WHERE section_id = ?", section_exists),
         ("SELECT CASE WHEN EXISTS ( SELECT 1 FROM dbo.SectionCourseTeacher AS sct",
          teaches),
         ("SELECT assessment_section_id FROM dbo.AssessmentSection WITH (UPDLOCK, HOLDLOCK)",

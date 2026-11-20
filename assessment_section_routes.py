@@ -37,17 +37,17 @@ def _teacher_id():
 
 def _handle(exc, action):
     if isinstance(exc, service.AssessmentNotFoundError):
-        return _error(str(exc), 404)
+        return _error(str(exc), 404, code="ASSESSMENT_NOT_FOUND")
     if isinstance(exc, service.AssessmentNotReadyError):
         return _error(str(exc), 409, code="ASSESSMENT_NOT_READY", missing=exc.missing)
     if isinstance(exc, service.SectionAssignmentError):
-        return _error(str(exc), exc.status_code, errors=exc.errors)
+        return _error(str(exc), exc.status_code, code="SECTION_ASSIGNMENT_REJECTED", errors=exc.errors)
     if isinstance(exc, service.AssignmentConflictError):
-        return _error(str(exc), 409)
+        return _error(str(exc), 409, code="PUBLISH_CONFLICT")
     if isinstance(exc, ValueError):
-        return _error(str(exc), 400)
+        return _error(str(exc), 400, code="INVALID_REQUEST")
     logger.exception("Section assignment %s failed", action)
-    return _error(f"Unable to {action}", 500)
+    return _error(f"Unable to {action}", 500, code="PUBLISH_UNAVAILABLE")
 
 
 @assessment_section_bp.route(
@@ -56,7 +56,7 @@ def _handle(exc, action):
 def get_assigned_sections(assessment_id):
     teacher_id = _teacher_id()
     if teacher_id is None:
-        return _error("Teacher access required", 403)
+        return _error("Teacher access required", 403, code="TEACHER_ONLY")
     try:
         sections = service.list_assigned_sections(assessment_id, teacher_id)
         return jsonify({"status": "success", "assessment_id": assessment_id,
@@ -72,7 +72,7 @@ def get_assigned_sections(assessment_id):
 def get_assignable_sections(assessment_id):
     teacher_id = _teacher_id()
     if teacher_id is None:
-        return _error("Teacher access required", 403)
+        return _error("Teacher access required", 403, code="TEACHER_ONLY")
     try:
         data = service.list_assignable_sections(assessment_id, teacher_id)
         return jsonify({"status": "success", "assessment_id": assessment_id,
@@ -87,20 +87,20 @@ def get_assignable_sections(assessment_id):
 def post_sections(assessment_id):
     teacher_id = _teacher_id()
     if teacher_id is None:
-        return _error("Teacher access required", 403)
+        return _error("Teacher access required", 403, code="TEACHER_ONLY")
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
-        return _error("Valid JSON object required", 400)
+        return _error("Valid JSON object required", 400, code="INVALID_REQUEST")
     if set(data) != {"section_ids"}:
-        return _error("Body must contain only 'section_ids'", 400)
+        return _error("Body must contain only 'section_ids'", 400, code="INVALID_REQUEST")
 
     try:
         result = service.assign_sections(
             assessment_id, teacher_id, data["section_ids"])
         return jsonify({"status": "success",
-                        "message": "Sections assigned",
-                        **result}), 201
+                        "message": "Sections already published" if result.get("replayed") else "Sections published",
+                        **result}), 200 if result.get("replayed") else 201
     except Exception as exc:
         return _handle(exc, "assign sections")
 
@@ -112,7 +112,7 @@ def post_sections(assessment_id):
 def delete_section(assessment_id, section_id):
     teacher_id = _teacher_id()
     if teacher_id is None:
-        return _error("Teacher access required", 403)
+        return _error("Teacher access required", 403, code="TEACHER_ONLY")
     try:
         result = service.remove_section(assessment_id, teacher_id, section_id)
         return jsonify({"status": "success",

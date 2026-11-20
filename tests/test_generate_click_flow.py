@@ -312,7 +312,7 @@ def readiness_responder(owned=True, draft=None, reference=("APPROVED", SOURCE, S
 
     def responder(sql, params):
         if sql.startswith("SELECT assessment_id, course_code, total_marks"):
-            return ([(7, "CSC-101", *marks, *problem)] if owned else []), -1
+            return ([(7, "CSC-101", *marks, *problem, "Assignment")] if owned else []), -1
         if "FROM dbo.ConstraintReviewDraft WITH (UPDLOCK, HOLDLOCK) WHERE assessment_id" in sql:
             return [(json.dumps(draft), 1)], -1
         if "SELECT value_constraints, code_constraints FROM dbo.Assessment" in sql:
@@ -322,6 +322,11 @@ def readiness_responder(owned=True, draft=None, reference=("APPROVED", SOURCE, S
                 return [], -1
             status, source, digest = reference
             return [(3, source, digest, "cpp", status)], -1
+        if sql.startswith("SELECT test_number, input_data, expected_output, marks"):
+            from marks_allocation import compute_allocation
+            try: per = compute_allocation(*marks)["per_case_marks"]
+            except ValueError: per = "0.50"
+            return [(i+1, f"2\n0 {i+1}\n" if draft.get("input_schema") else str(i+1), str(i+1), per) for i in range(tests)], -1
         if "FROM dbo.TestCase" in sql:
             return [(tests,)], -1
         if "FROM dbo.AssessmentSection" in sql:

@@ -28,7 +28,7 @@ from db import get_connection
 
 ASSESSMENT_SQL = """
 SELECT assessment_id, course_code, total_marks, validation_percentage,
-       problem_statement, input_format, output_format
+       problem_statement, input_format, output_format, assessment_type
 FROM dbo.Assessment
 WHERE assessment_id = ? AND teacher_id = ?;
 """
@@ -191,16 +191,12 @@ def get_generation_readiness(assessment_id, teacher_id, connection_factory=get_c
 
         cursor.execute(SECTION_COUNT_SQL, (assessment_id,))
         section_count = int(cursor.fetchone()[0])
+        from assessment_publication_policy import publication_problems
+        publish_missing = publication_problems(cursor, assessment_id, total_marks,
+                                               validation_percentage, row[7])
     finally:
         conn.rollback()
         conn.close()
-
-    publish_missing = []
-    if test_count != REQUIRED_TEST_CASE_COUNT:
-        publish_missing.append({"code": "TEST_CASES_NOT_GENERATED",
-                                "detail": f"{test_count} of {REQUIRED_TEST_CASE_COUNT}"})
-    if not rubric_ready:
-        publish_missing.append({"code": "RUBRIC_INCOMPLETE"})
 
     return {
         "assessment_id": assessment_id,

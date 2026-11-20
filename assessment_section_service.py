@@ -47,27 +47,11 @@ class AssessmentNotReadyError(ValueError):
         super().__init__("Assessment is not ready to publish")
 
 
-def publish_problems(cursor, assessment_id, total_marks, validation_percentage):
-    """
-    [] when the assessment may be assigned to sections, else the reasons.
-    Same rules as generation/submission: exactly REQUIRED_TEST_CASE_COUNT
-    saved test cases and a complete rubric for the rubric allocation.
-    """
-    from assessment_rubric_service import check_rubric_ready
-    from test_case_policy import REQUIRED_TEST_CASE_COUNT
-
-    problems = []
-    cursor.execute(COUNT_TEST_CASES_SQL, (assessment_id,))
-    count = int(cursor.fetchone()[0])
-    if count != REQUIRED_TEST_CASE_COUNT:
-        problems.append({"code": "TEST_CASES_NOT_GENERATED",
-                         "detail": f"{count} of {REQUIRED_TEST_CASE_COUNT} test cases"})
-    try:
-        check_rubric_ready(cursor, assessment_id, total_marks, validation_percentage)
-    except ValueError:
-        problems.append({"code": "RUBRIC_INCOMPLETE",
-                         "detail": "Rubric criteria must add up to the rubric allocation"})
-    return problems
+def publish_problems(cursor, assessment_id, total_marks, validation_percentage,
+                     assessment_type):
+    from assessment_publication_policy import publication_problems
+    return publication_problems(cursor, assessment_id, total_marks,
+                                validation_percentage, assessment_type)
 
 
 class SectionAssignmentError(ValueError):
@@ -95,17 +79,11 @@ class SectionAssignmentError(ValueError):
 
 LOCK_OWNED_ASSESSMENT_SQL = """
 SELECT assessment_id, course_code, deadline_at, allow_late,
-       total_marks, validation_percentage
+       total_marks, validation_percentage, title, assessment_type,
+       (SELECT title FROM dbo.Course_Export c
+        WHERE c.course_no COLLATE DATABASE_DEFAULT = Assessment.course_code COLLATE DATABASE_DEFAULT) AS course_name
 FROM dbo.Assessment WITH (UPDLOCK, HOLDLOCK)
 WHERE assessment_id = ? AND teacher_id = ?;
-"""
-
-# Publishing guard: the saved test set (written only by the verified save
-# paths) must be complete before students can see the assessment.
-COUNT_TEST_CASES_SQL = """
-SELECT COUNT(*)
-FROM dbo.TestCase WITH (HOLDLOCK)
-WHERE assessment_id = ?;
 """
 
 READ_OWNED_ASSESSMENT_SQL = """
@@ -116,14 +94,14 @@ WHERE assessment_id = ? AND teacher_id = ?;
 
 SECTION_EXISTS_SQL = """
 SELECT section_id
-FROM dbo.Section_Export
+FROM dbo.Section_Export WITH (HOLDLOCK)
 WHERE section_id = ?;
 """
 
 TEACHES_SECTION_SQL = """
 SELECT CASE WHEN EXISTS (
     SELECT 1
-    FROM dbo.SectionCourseTeacher AS sct
+    FROM dbo.SectionCourseTeacher AS sct WITH (HOLDLOCK)
     WHERE sct.section_id COLLATE DATABASE_DEFAULT = ? COLLATE DATABASE_DEFAULT
       AND sct.teacher_id COLLATE DATABASE_DEFAULT = ? COLLATE DATABASE_DEFAULT
       AND sct.course_no  COLLATE DATABASE_DEFAULT = ? COLLATE DATABASE_DEFAULT
@@ -302,11 +280,13 @@ def assign_sections(assessment_id, teacher_id, section_ids,
         course_code = assessment[1]
 
         # Publishing guard (nothing is written when it fails).
-        missing = publish_problems(cursor, assessment_id, assessment[4], assessment[5])
+        missing = publish_problems(cursor, assessment_id, assessment[4], assessment[5], assessment[7])
         if missing:
             raise AssessmentNotReadyError(missing)
 
         errors = []
+        existing = []
+        pending = []
 
         for section_id in requested:
             cursor.execute(SECTION_EXISTS_SQL, (section_id,))
@@ -324,25 +304,39 @@ def assign_sections(assessment_id, teacher_id, section_ids,
                 continue
 
             cursor.execute(EXISTING_ASSIGNMENT_SQL, (assessment_id, section_id))
-            if cursor.fetchone() is not None:
-                errors.append({"section_id": section_id,
-                               "reason": "ALREADY_ASSIGNED"})
+            assignment = cursor.fetchone()
+            if assignment is not None:
+                existing.append({"assessment_section_id": int(assignment[0]), "section_id": section_id})
+            else:
+                pending.append(section_id)
 
         if errors:
             raise SectionAssignmentError(errors)
 
         created = []
-        for section_id in requested:
+        for section_id in pending:
             cursor.execute(INSERT_ASSIGNMENT_SQL, (assessment_id, section_id))
             created.append({
                 "assessment_section_id": int(cursor.fetchone()[0]),
                 "section_id": section_id
             })
 
+        cursor.execute("SELECT section_id FROM dbo.AssessmentSection WITH (HOLDLOCK) WHERE assessment_id = ? ORDER BY section_id", (assessment_id,))
+        published = [row[0] for row in cursor.fetchall()]
         conn.commit()
 
         return {
             "assessment_id": assessment_id,
+            "title": assessment[6],
+            "assessment_type": assessment[7],
+            "course_name": assessment[8],
+            "total_marks": str(assessment[4]),
+            "publishing_status": "PUBLISHED",
+            "published_section_ids": published,
+            "requested_section_ids": requested,
+            "unchanged": existing,
+            "replayed": not created,
+
             "course_code": course_code,
             "assigned": created,
             "deadline_at": _iso(assessment[2])

@@ -373,7 +373,7 @@ class AuthorizationTests(unittest.TestCase):
         self.assertEqual(r.status_code, 403)
         self.assertEqual(self.flow.world.asec, {})
         self.assertEqual(self.flow.assign(self.teacher).status_code, 201)
-        self.assertEqual(self.flow.assign(self.teacher).status_code, 409)
+        self.assertEqual(self.flow.assign(self.teacher).status_code, 200)
 
     def test_unassigned_or_unenrolled_students_cannot_see_or_submit(self):
         self.assertEqual(self.flow.submit(self.student, "prime_correct")

@@ -535,6 +535,11 @@ INNER JOIN dbo.Enrollment_Export AS e
    AND e.course_no COLLATE DATABASE_DEFAULT
        = a.course_code COLLATE DATABASE_DEFAULT
 WHERE e.student_id COLLATE DATABASE_DEFAULT = ? COLLATE DATABASE_DEFAULT
+  AND a.assessment_type IN ('Assignment', 'Quiz')
+  AND EXISTS (SELECT 1 FROM dbo.Student_Export st
+      WHERE st.student_id COLLATE DATABASE_DEFAULT = e.student_id COLLATE DATABASE_DEFAULT)
+  AND EXISTS (SELECT 1 FROM dbo.Section_Export se
+      WHERE se.section_id COLLATE DATABASE_DEFAULT = sec.section_id COLLATE DATABASE_DEFAULT)
   -- Same rule as student_submission_service: the assessment's teacher
   -- must teach this course in this section.
   AND EXISTS (

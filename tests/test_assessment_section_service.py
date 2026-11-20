@@ -4,10 +4,12 @@ All database access goes to an in-memory fake; nothing reaches SQL Server.
 """
 
 import unittest
+import json
 from datetime import datetime
 from unittest.mock import patch
 
 from tests.fakes import FakeConnection
+from tests.test_generate_click_flow import finalized_draft, accepted
 
 from flask_jwt_extended import create_access_token
 
@@ -27,19 +29,27 @@ def responder_factory(owned=True, sections=("SEC-A", "SEC-B"),
                       insert_error=None, test_cases=10,
                       rubric=((1, "Logic", "3.00", None), (2, "Quality", "2.00", None))):
     next_id = [100]
+    published = set(assigned)
+    draft = finalized_draft(schema=None)
 
     def responder(sql, params):
-        if "FROM dbo.Assessment WITH (UPDLOCK, HOLDLOCK)" in sql \
+        if sql.startswith("SELECT assessment_id, course_code, deadline_at") \
                 or sql.startswith("SELECT assessment_id, course_code, deadline_at"):
-            return ([(7, "CAI-252", DEADLINE, False, "10.00", "50.00")]
+            return ([(7, "CAI-252", DEADLINE, False, "10.00", "50.00", "Publish fixture", "Assignment", "Course fixture")]
                     if owned else []), -1
         if "FROM dbo.TestCase WITH (HOLDLOCK)" in sql:
-            return [(test_cases,)], -1
+            return [(i+1, str(i+1), str(i+1), "0.50") for i in range(test_cases)], -1
+        if "FROM dbo.ConstraintReviewDraft" in sql:
+            return [(json.dumps(draft), 1)], -1
+        if sql.startswith("SELECT value_constraints, code_constraints"):
+            return [("\n".join(accepted(draft,"value")), "\n".join(accepted(draft,"code")))], -1
+        if sql.startswith("SELECT section_id FROM dbo.AssessmentSection"):
+            return [(key,) for key in sorted(published)], -1
         if "OBJECT_ID(N'dbo.AssessmentRubricCriterion'" in sql:
             return [(1,)], -1
         if "FROM dbo.AssessmentRubricCriterion WITH (HOLDLOCK)" in sql:
             return list(rubric), -1
-        if "FROM dbo.Section_Export WHERE section_id = ?" in sql:
+        if "FROM dbo.Section_Export WITH (HOLDLOCK) WHERE section_id = ?" in sql:
             return ([(params[0],)] if params[0] in sections else []), -1
         if "FROM dbo.SectionCourseTeacher" in sql and "THEN 1 ELSE 0" in sql:
             section, teacher, course = params
@@ -50,6 +60,7 @@ def responder_factory(owned=True, sections=("SEC-A", "SEC-B"),
         if sql.startswith("INSERT INTO dbo.AssessmentSection"):
             if insert_error:
                 raise insert_error
+            published.add(params[1])
             next_id[0] += 1
             return [(next_id[0],)], 1
         if "FROM dbo.Submission WITH (UPDLOCK, HOLDLOCK)" in sql:
@@ -96,16 +107,19 @@ class AssignSectionsTests(unittest.TestCase):
                   if s.split()[0] in ("INSERT", "UPDATE", "DELETE")]
         self.assertTrue(all("dbo.AssessmentSection" in s for s in writes))
 
-    def test_duplicate_assignment_409_nothing_written(self):
+    def test_repeated_assignment_is_idempotent(self):
         conn = FakeConnection(responder_factory(assigned=("SEC-A",)))
-        exc = assign(conn, ["SEC-A", "SEC-B"])
-        self.assertIsInstance(exc, svc.SectionAssignmentError)
-        self.assertEqual(exc.status_code, 409)
-        self.assertEqual(exc.errors, [{"section_id": "SEC-A",
-                                       "reason": "ALREADY_ASSIGNED"}])
+        result = assign(conn, ["SEC-A"])
+        self.assertTrue(result["replayed"])
+        self.assertEqual(result["published_section_ids"], ["SEC-A"])
         self.assertFalse(conn.statements("INSERT"))
-        self.assertEqual(conn.commits, 0)
-        self.assertGreaterEqual(conn.rollbacks, 1)
+        self.assertEqual(conn.commits, 1)
+
+    def test_retry_mixed_with_new_section_adds_only_new(self):
+        conn = FakeConnection(responder_factory(assigned=("SEC-A",)))
+        result = assign(conn, ["SEC-A", "SEC-B"])
+        self.assertEqual(len(conn.statements("INSERT")), 1)
+        self.assertEqual(result["published_section_ids"], ["SEC-A", "SEC-B"])
 
     def test_unauthorized_teacher_is_not_found(self):
         conn = FakeConnection(responder_factory(owned=False))

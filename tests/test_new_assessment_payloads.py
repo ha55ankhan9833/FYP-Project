@@ -199,22 +199,28 @@ class RouteAcceptanceTests(unittest.TestCase):
 
     def test_section_body_accepted(self):
         def responder(sql, params):
+            if "FROM dbo.ConstraintReviewDraft" in sql:
+                return [(json.dumps(FINAL_DRAFT), True)], -1
+            if sql.startswith("SELECT value_constraints, code_constraints"):
+                return [(CONSTRAINT, "")], -1
             if "FROM dbo.Assessment WITH (UPDLOCK, HOLDLOCK)" in sql:
                 return [(99, "CSC-101", datetime(2026, 12, 15, 23, 59), False,
-                         "10.00", "50.00")], -1
+                         "10.00", "50.00", "Fixture", "Assignment", "Course")], -1
             # Publishing guard: a ready assessment (10 tests, complete rubric).
             if "FROM dbo.TestCase WITH (HOLDLOCK)" in sql:
-                return [(10,)], -1
+                return [(i+1,str(i+1),str(i+1),"0.50") for i in range(10)], -1
             if "OBJECT_ID(N'dbo.AssessmentRubricCriterion'" in sql:
                 return [(1,)], -1
             if "FROM dbo.AssessmentRubricCriterion WITH (HOLDLOCK)" in sql:
                 return [(1, "Logic", "3.00", None), (2, "Quality", "2.00", None)], -1
-            if "FROM dbo.Section_Export WHERE section_id = ?" in sql:
+            if "FROM dbo.Section_Export WITH (HOLDLOCK) WHERE section_id = ?" in sql:
                 return [(params[0],)], -1
             if "FROM dbo.SectionCourseTeacher" in sql:
                 return [(1 if params == ("SEC000001", "BIIT235", "CSC-101") else 0,)], -1
             if "FROM dbo.AssessmentSection WITH (UPDLOCK, HOLDLOCK)" in sql:
                 return [], -1
+            if sql.startswith("SELECT section_id FROM dbo.AssessmentSection"):
+                return [("SEC000001",)], -1
             if sql.startswith("INSERT INTO dbo.AssessmentSection"):
                 return [(1,)], 1
             raise AssertionError(sql)

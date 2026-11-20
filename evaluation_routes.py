@@ -183,6 +183,8 @@ def student_assessments():
     student_id = _identity("student")
     if student_id is None:
         return _error("Student access required", 403)
+    if request.args:
+        return jsonify(status="error", code="INVALID_PARAMETER", message="Query parameters are not supported; student identity comes from JWT"), 400
     try:
         items = review.list_student_assessments(student_id)
         return jsonify({"status": "success", "total": len(items),
