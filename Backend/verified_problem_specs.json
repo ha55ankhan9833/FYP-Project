@@ -1,0 +1,96 @@
+{
+ "_comment": "SERVER-CONTROLLED, OWNER-REVIEWED. Each spec lets a verified Python oracle produce expected outputs for an assessment WITHOUT a teacher reference solution, but only when the assessment's problem statement, input format, output format, approved value constraints and approved input schema ALL match a reviewed entry exactly (after whitespace/case/Unicode normalisation only). No API can add entries; changing this file needs owner review like trusted_reference_hashes.json.",
+ "version": 1,
+ "specs": [
+  {
+   "spec_id": "max_min_loops_v1",
+   "oracle_id": "max_min_v1",
+   "description": "Find Maximum and Minimum Using Loops: read N then N integers, print the maximum on line 1 and the minimum on line 2.",
+   "reviewed_on": "2026-11-20",
+   "review_basis": "Owner request 2026-11-20 to support the current max/min assignment without a reference upload. Oracle max_min_v1: two independent algorithms, 0 disagreements over the full verified domain (fixtures/max_min_oracle/oracle_verification.json). Texts below are the reviewed CSC-101 assignment (FYP_E2E_Test assessments 7 and 8).",
+   "problem_statements": [
+    "Find Maximum and Minimum Using Loops\nWrite a C++ program that reads N integers into an array and prints the maximum and the minimum value.\nRequirements:\n* You must use a for loop.\n* You must use if/else conditional statements.\n* You must NOT use sort() or STL sorting algorithms.\n* You must NOT use recursion.\n* Use cin and cout.\nConstraints:\n1 <= N <= 100\n-1000 <= A[i] <= 1000"
+   ],
+   "input_formats": [
+    "The first line contains N.\nThe second line contains N integers A[i]."
+   ],
+   "output_formats": [
+    "Print the maximum element on the first line and the minimum element on the second line."
+   ],
+   "value_constraints": [
+    "1 <= N <= 100",
+    "-1000 <= A[i] <= 1000"
+   ],
+   "input_schema": {
+    "version": 1,
+    "variables": {
+     "N": {
+      "min": 1,
+      "max": 100
+     }
+    },
+    "items": [
+     {
+      "type": "ints",
+      "vars": [
+       "N"
+      ]
+     },
+     {
+      "type": "array",
+      "name": "A",
+      "length": "N",
+      "min": -1000,
+      "max": 1000
+     }
+    ],
+    "relations": []
+   }
+  },
+  {
+   "spec_id": "max_min_loops_frontend_v1",
+   "oracle_id": "max_min_v1",
+   "description": "Find Maximum and Minimum Using Loops, current frontend wording: read N then N space-separated integers, print the maximum on line 1 and the minimum on line 2.",
+   "reviewed_on": "2026-11-20",
+   "review_basis": "Owner approval 2026-11-20 to trust the current frontend wording. Texts copied exactly from the frontend-created assessments (FYP_Database assessments 6 and 7, identical). Reviewed: input = count line N (1..100) then N space-separated integers (-1000..1000); output line 1 = maximum, line 2 = minimum; value constraints and input schema identical to max_min_loops_v1; the code requirements (for loop, if/else, no sort, no recursion, cin/cout) and the 'handle positive, negative, repeated values and N = 1' sentence do not change expected outputs. Oracle max_min_v1: 0 disagreements over the full verified domain.",
+   "problem_statements": [
+    "Write a C++ program that reads N integers and determines the maximum and minimum values among them.\n\n**Mandatory Code Requirements:**\n\n1. You must use a **for loop** to process the integers.\n2. You must use **if/else conditional statements** to update the maximum and minimum values.\n3. You must not use the built-in `sort()` function or STL sorting algorithms.\n4. You must not use recursion.\n5. You must read input using `cin` and display output using `cout`.\n\n**Value Constraints:**\n\n- 1 <= N <= 100\n- -1000 <= A[i] <= 1000\n\nYour program must correctly handle positive integers, negative integers, repeated values and the case where N = 1."
+   ],
+   "input_formats": [
+    "The first line contains an integer N, representing the number of elements (1 <= N <= 100).\n\nThe second line contains N space-separated integers A[i], where -1000 <= A[i] <= 1000."
+   ],
+   "output_formats": [
+    "Print the maximum and minimum values on separate lines.\n\nThe first line must contain the maximum value.\n\nThe second line must contain the minimum value."
+   ],
+   "value_constraints": [
+    "1 <= N <= 100",
+    "-1000 <= A[i] <= 1000"
+   ],
+   "input_schema": {
+    "version": 1,
+    "variables": {
+     "N": {
+      "min": 1,
+      "max": 100
+     }
+    },
+    "items": [
+     {
+      "type": "ints",
+      "vars": [
+       "N"
+      ]
+     },
+     {
+      "type": "array",
+      "name": "A",
+      "length": "N",
+      "min": -1000,
+      "max": 1000
+     }
+    ],
+    "relations": []
+   }
+  }
+ ]
+}

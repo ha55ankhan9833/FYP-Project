@@ -1,0 +1,94 @@
+{
+ "name": "flan_t5_small_lora_test_input_v1",
+ "status": "PINNED - NOT RUN. Uploading data (G-A) and installing packages / downloading the base model in Colab (G-B) each need separate approval.",
+ "base_model": {
+  "repo": "google/flan-t5-small",
+  "revision": "0fc9ddf78a1e988dac52e2dac162b0ede4fd74ab",
+  "revision_note": "Hugging Face commit (lastModified 2023-10-10); config: 8+8 layers, d_model 512, 6 heads, d_kv 64, d_ff 1024, gated-gelu."
+ },
+ "peft_version": "0.21.2",
+ "pinned_packages": {
+  "peft": "0.21.2",
+  "transformers": "5.22.2",
+  "accelerate": "1.15.0",
+  "note": "transformers 5.22.2 = local inference version (.venv_ai); peft 0.21.2 fixes encoder-decoder models on transformers>=5.18; Trainer needs accelerate>=1.1.0."
+ },
+ "runtime": {
+  "python_min": "3.11",
+  "torch_min": "2.6",
+  "torch_note": "Colab's preinstalled CUDA build is used (not reinstalled); its version is recorded in TRAINING_MANIFEST.json."
+ },
+ "lora": {
+  "task_type": "SEQ_2_SEQ_LM",
+  "r": 16,
+  "lora_alpha": 32,
+  "lora_dropout": 0.05,
+  "bias": "none",
+  "target_modules": ["q", "k", "v", "o", "wi_0", "wi_1", "wo"],
+  "expected_trainable_parameters": 2555904,
+  "expected_trainable_note": "Computed from the T5-small config (d_model 512, inner 384, d_ff 1024, 8 encoder + 8 decoder layers); confirm with print_trainable_parameters()."
+ },
+ "data": {
+  "train_file": "train.jsonl",
+  "eval_file": "validation_dev.jsonl",
+  "never_uploaded": ["validation_heldout.jsonl", "validation_problems.jsonl", "any test-split data"],
+  "max_source_tokens": 512,
+  "max_target_tokens": 256,
+  "truncation": "none - rows over the limits were removed by dev_tools/build_test_input_dataset.py"
+ },
+ "training": {
+  "seed": 42,
+  "learning_rate": 0.001,
+  "lr_scheduler_type": "linear",
+  "warmup_ratio": 0.03,
+  "warmup_note": "transformers 5.22.2 has no warmup_ratio argument; the notebook passes it as warmup_steps=0.03, which get_warmup_steps resolves to ceil(total_steps * 0.03) (8859 steps -> 266).",
+  "weight_decay": 0.0,
+  "per_device_train_batch_size": 16,
+  "per_device_eval_batch_size": 32,
+  "gradient_accumulation_steps": 1,
+  "num_train_epochs": 3,
+  "precision": "fp32 (T5 is unstable in fp16; T4 has no bf16)",
+  "eval_strategy": "steps",
+  "save_strategy": "steps",
+  "eval_steps": 500,
+  "save_steps": 500,
+  "load_best_model_at_end": true,
+  "metric_for_best_model": "eval_loss",
+  "save_total_limit": 2,
+  "schedule_note": "Periodic checkpoints every 500 of 8859 optimizer steps (17 saves + final); evaluation runs at the same steps because load_best_model_at_end requires save/eval alignment."
+ },
+ "checkpointing": {
+  "local_dir": "/content/checkpoints",
+  "drive_dir": "checkpoints",
+  "keep_last_on_drive": 2,
+  "method": "Trainer saves locally; a callback copies each finished checkpoint to a Drive staging folder, verifies SHA-256, writes FYP_CHECKPOINT_COMPLETE.json, then renames it to checkpoint-N. Resume restores the latest valid compatible checkpoint (and the best one) and calls trainer.train(resume_from_checkpoint=...) so optimizer, scheduler, RNG and global step continue.",
+  "min_total_vram_gib": 12,
+  "min_free_vram_gib": 11,
+  "vram_note": "Measured locally: one worst-case batch (16 x 512 source, 16 x 257 target tokens, fp32, forward+backward) peaked at ~9.4 GiB on CPU; a T4 reports ~14.7 GiB.",
+  "required_drive_free_gib": 1.0,
+  "storage_note": "~31.7 MB per checkpoint (fp32 adapter + AdamW states + state files); at most keep_last + best + one staging copy (~127 MB) on Drive, plus ~320 MB final export."
+ },
+ "inference": {
+  "do_sample": true,
+  "top_p": 0.95,
+  "temperature": 0.9,
+  "num_return_sequences": 16,
+  "max_new_tokens": 256
+ },
+ "export": {
+  "final_dir": "final",
+  "final_note": "Export goes to <output>/final/ (must not exist), separate from <output>/checkpoints/.",
+  "adapter_dir": "test_input_lora_adapter",
+  "merged_dir": "test_input_generator_v1",
+  "merge": "PeftModel.merge_and_unload() -> save_pretrained() (transformers 5.x always writes model.safetensors)",
+  "manifest": "TRAINING_MANIFEST.json with model_safetensors_sha256, dataset manifest sha256, config, library versions, GPU, losses, wall time",
+  "local_install_path": "models/test_input_generator_v1 (git-ignored); loaded by ai_test_input_service.py with plain transformers (no peft)"
+ },
+ "evaluation": {
+  "tool": "dev_tools/evaluate_test_inputs.py run --method model",
+  "tuning": "validation dev subset only",
+  "report": "validation heldout subset; compared with the deterministic baseline",
+  "metrics": ["schema supported rate", "candidate syntax / constraint / semantic validity", "distinct ratio", "mean pairwise edit distance", "scalar min / max coverage", "identical-to-gold rate", "latency"],
+  "test_split": "evaluated once at the end only with separate approval"
+ }
+}

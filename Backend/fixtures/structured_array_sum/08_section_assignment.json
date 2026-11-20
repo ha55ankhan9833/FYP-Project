@@ -1,0 +1,10 @@
+{
+  "method": "POST",
+  "path": "/api/assessments/<new_id>/sections",
+  "body": {
+    "section_ids": [
+      "SEC000001"
+    ]
+  },
+  "notes": "W2. FYP_E2E_Test only: SEC000001 holds only the E2E test students."
+}

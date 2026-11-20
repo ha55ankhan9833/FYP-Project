@@ -1,0 +1,101 @@
+# ======================================================================
+# Auto Test Case Generator backend - files that must never be committed
+# ======================================================================
+
+# --- Secrets and credentials -----------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+# Login tokens written by fixtures/*_login.py for the E2E driver.
+dev_tools/.tokens/
+# Local worker heartbeat (llm_analysis_worker)
+dev_tools/.runtime/
+*.token
+
+# --- Python environments and caches ----------------------------------
+.venv/
+.venv_ai/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Local AI models (296 MB FLAN-T5; restore separately) ------------
+models/
+*.safetensors
+*.bin
+*.pt
+*.onnx
+
+# --- C++ build outputs and temporary build folders --------------------
+*.exe
+*.o
+*.obj
+*.out
+*.ilk
+*.pdb
+build/
+fyp_cpp_build_*/
+fyp_*_build_*/
+
+# --- Prepared AI training/evaluation data (derived from the dataset) --
+data_prepared/
+
+# --- Generated reports (contain hidden test inputs / outputs) ---------
+dev_tools/reports/
+reports/
+
+# --- E2E run state (IDs and copies of hidden test cases) --------------
+setup_state.json
+fixtures/*_e2e/
+
+# --- Internal audit notes with staff names (kept local only) ----------
+docs/section_assignment/
+docs/FINAL_BACKEND_AUDIT.md
+docs/M3_MIGRATION_PREFLIGHT.md
+
+# --- Database exports, backups and dumps ------------------------------
+*.bak
+*.bacpac
+*.dacpac
+*.mdf
+*.ldf
+*.ndf
+*.trn
+*.sqlite
+*.db
+exports/
+*.csv
+*.xlsx
+
+# --- Local backups, legacy variants and temporary files ---------------
+_backups/
+*.orig
+*.tmp
+*.swp
+*~
+# Superseded module versions kept on disk only (not imported anywhere).
+*_backup.py
+*_backup_*.py
+*_backup_v[0-9]*.py
+app_backup_before_ai.py
+ollama_grading_v[0-9]*.py
+
+# --- Editors and OS ---------------------------------------------------
+.vscode/
+.idea/
+*.code-workspace
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# --- Claude Code local state ------------------------------------------
+.claude/

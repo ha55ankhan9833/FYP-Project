@@ -1,0 +1,10 @@
+# Normalize text files in the repository.
+* text=auto
+
+# Hash-pinned content: trusted fixtures, reference solutions, recorded
+# approvals and test data are verified by SHA-256 of their exact bytes.
+# Keep LF on every checkout (core.autocrlf=true would otherwise convert
+# them to CRLF and break the approved hashes).
+*.cpp  text eol=lf
+*.json text eol=lf
+*.sql  text eol=lf

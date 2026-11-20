@@ -1,0 +1,21 @@
+{
+  "method": "POST",
+  "path": "/api/submissions/<submission_id>/evaluation/finalize",
+  "body": {
+    "final_score": "5.00",
+    "criteria": [
+      {
+        "criterion_name": "Logic & Correctness",
+        "marks": "3.00",
+        "comment": "Reads N and exactly N values into a 64-bit total; handles negative values and N = 1."
+      },
+      {
+        "criterion_name": "Code Quality",
+        "marks": "2.00",
+        "comment": "Clear names and appropriate types; prints only the sum."
+      }
+    ],
+    "instructor_feedback": "AUTOMATIC CODE REVIEW - NOT EXECUTED. No test cases were run on your program, so the test-case portion was not awarded. Marks come from an AI code review that your teacher checked: Logic & Correctness 3.00 of 3.00, Code Quality 2.00 of 2.00."
+  },
+  "notes": "Live worker demo. Teacher BIIT235 approves criterion marks; no verified test marks exist, so final_score = criterion total."
+}

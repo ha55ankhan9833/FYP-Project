@@ -1,0 +1,10 @@
+{
+  "method": "POST",
+  "path": "/api/ai/drafts",
+  "body": {
+    "problem": "Write a C++17 program that reads one integer N and decides whether N is a prime number. A prime number is an integer greater than 1 whose only positive divisors are 1 and itself (so 1 is NOT prime and 2 is the smallest prime). Print YES if N is prime, otherwise print NO.",
+    "input_format": "A single line containing one integer N.",
+    "output_format": "Print exactly YES if N is prime, otherwise print exactly NO, followed by a newline. Output is case-sensitive; print nothing else."
+  },
+  "notes": "Teacher BIIT235 JWT. Requires ai_local_api.py running on 127.0.0.1:5001. Response contains draft.draft_id and the AI suggestions with their ids."
+}

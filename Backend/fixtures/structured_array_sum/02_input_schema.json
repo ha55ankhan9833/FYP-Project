@@ -1,0 +1,32 @@
+{
+  "method": "PUT",
+  "path": "/api/ai/drafts/<draft_id>/input-schema",
+  "body": {
+    "input_schema": {
+      "version": 1,
+      "variables": {
+        "N": {
+          "min": 1,
+          "max": 100
+        }
+      },
+      "items": [
+        {
+          "type": "ints",
+          "vars": [
+            "N"
+          ]
+        },
+        {
+          "type": "array",
+          "name": "A",
+          "length": "N",
+          "min": -1000000000,
+          "max": 1000000000
+        }
+      ],
+      "relations": []
+    }
+  },
+  "notes": "Must be sent BEFORE approving the value category; locked after."
+}

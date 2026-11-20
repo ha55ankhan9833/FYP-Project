@@ -1,0 +1,20 @@
+{
+  "method": "POST",
+  "path": "/api/assessments",
+  "body": {
+    "course_code": "CSC-101",
+    "assessment_type": "Quiz",
+    "title": "Prime Number Check",
+    "problem_statement": "Write a C++17 program that reads one integer N and decides whether N is a prime number. A prime number is an integer greater than 1 whose only positive divisors are 1 and itself (so 1 is NOT prime and 2 is the smallest prime). Print YES if N is prime, otherwise print NO.",
+    "input_format": "A single line containing one integer N.",
+    "output_format": "Print exactly YES if N is prime, otherwise print exactly NO, followed by a newline. Output is case-sensitive; print nothing else.",
+    "total_marks": 10,
+    "validation_percentage": 50,
+    "deadline_at": "2026-12-15T23:59:00",
+    "allow_late": false,
+    "late_penalty_marks": 0,
+    "additional_constraints": "Use C++17. Read from standard input and write to standard output. Your program must finish within 2 seconds for every valid N.",
+    "draft_id": "<DRAFT_ID returned by POST /api/ai/drafts, after finalize>"
+  },
+  "notes": "Replace draft_id. Response: assessment_id (= <new_id> below)."
+}

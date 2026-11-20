@@ -1,0 +1,21 @@
+{
+  "method": "POST",
+  "path": "/api/submissions/<submission_id>/evaluation/finalize",
+  "body": {
+    "final_score": "3.00",
+    "criteria": [
+      {
+        "criterion_name": "Logic & Correctness",
+        "marks": "1.50",
+        "comment": "Reads input correctly; the int accumulator overflows for sums beyond the 32-bit range, which the statement warns about."
+      },
+      {
+        "criterion_name": "Code Quality",
+        "marks": "1.50",
+        "comment": "Clear and readable; use a 64-bit type (long long) for the sum."
+      }
+    ],
+    "instructor_feedback": "AUTOMATIC CODE REVIEW - NOT EXECUTED. No test cases were run on your program, so the test-case portion was not awarded. Marks come from an AI code review that your teacher checked and adjusted: Logic & Correctness 1.50 of 3.00, Code Quality 1.50 of 2.00. Main issue: the sum is stored in an int and can overflow; use long long."
+  },
+  "notes": "Gate L. Teacher BIIT235 approves the AI_ANALYSIS_UNVERIFIED evaluation with criterion marks; verified test marks are 0 (not run), so final_score must equal the criterion total."
+}

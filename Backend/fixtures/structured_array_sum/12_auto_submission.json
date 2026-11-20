@@ -1,0 +1,9 @@
+{
+  "method": "POST",
+  "path": "/api/assessments/<new_id>/submissions",
+  "body": {
+    "file_name": "auto_worker_submission.cpp",
+    "source_code": "// SYNTHETIC E2E SUBMISSION - automatic LLM-worker demo (FYP_E2E_Test only).\n// Submitted as student E2E-TEST-0004 to Assessment 6. It is analysed by the\n// offline LLM worker from its source code only: never compiled or executed.\n#include <iostream>\n\nint main() {\n    int count = 0;\n    std::cin >> count;\n    long long total = 0;\n    for (int i = 0; i < count; ++i) {\n        long long value = 0;\n        std::cin >> value;\n        total += value;\n    }\n    std::cout << total << '\\n';\n    return 0;\n}\n"
+  },
+  "notes": "Live worker demo. Student E2E-TEST-0004 token only; creates a Submission and a PENDING GradingJob. Never compiled or executed."
+}

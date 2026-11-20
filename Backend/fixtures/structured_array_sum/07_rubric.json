@@ -1,0 +1,19 @@
+{
+  "method": "PUT",
+  "path": "/api/assessments/<new_id>/rubric",
+  "body": {
+    "criteria": [
+      {
+        "criterion_name": "Logic & Correctness",
+        "max_marks": "3.00",
+        "description": "Reads exactly N values and sums them with a 64-bit type (long long) so sums up to 100 x 1e9 do not overflow; handles negative values and N = 1."
+      },
+      {
+        "criterion_name": "Code Quality",
+        "max_marks": "2.00",
+        "description": "Readable structure and naming, appropriate types, no unnecessary work; reads standard input and prints only the sum."
+      }
+    ]
+  },
+  "notes": "W1. Must precede section assignment (students cannot submit while the 5.00 rubric allocation is undefined)."
+}

@@ -1,0 +1,13 @@
+{
+  "_purpose": "Owner approvals for dev_tools/trusted_execution_harness.py. An entry authorizes compiling and running ONE named developer fixture whose file has EXACTLY this SHA-256. Empty = nothing may be compiled or executed. Student code is never eligible.",
+  "approved": [
+    {
+      "fixture": "array_sum_int_accumulator",
+      "sha256": "ac95167f7e4acc460199f96df3325ba85501d2efdd585fb380cd4f1848e0d6f4",
+      "assessment_id": 6,
+      "approved_on": "2026-11-18",
+      "approved_for": "Gate V (V2): one controlled execution against Assessment 6's 10 stored tests (FYP_E2E_Test, read-only)",
+      "reviewed_bytes": 454
+    }
+  ]
+}
