@@ -1,4 +1,5 @@
 from numeric_constraint_validator import extract_explicit_bounds
+from code_requirement_extractor import extract_code_requirements, manual_review_warnings
 
 import os
 import re
@@ -43,39 +44,8 @@ def _retrieval_unavailable(detail):
                     "without retrieved examples (baseline prompt). " + detail)[:500],
     }
 
-CODE_PATTERNS = {
-    "recursion_required": [
-        r"\brecursiv(?:e|ely)\b",
-        r"\brecursion\b"
-    ],
-    "recursion_prohibited": [
-        r"\b(?:without|avoid|do not|don't|must not)\s+(?:using\s+)?recursion\b"
-    ],
-    "dynamic_programming_required": [
-        r"\b(?:use|using|apply|implement(?:ing)?)\s+dynamic\s+programming\b"
-    ],
-    "function_required": [
-        r"\b(?:dedicated|separate|user-defined)\s+(?:value-returning\s+)?function\b",
-        r"\bfunction\s+(?:must|should)\b"
-    ],
-    "loop_required": [
-        r"\busing\s+(?:a\s+)?loop\b",
-        r"\b(?:must|should)\s+use\s+(?:a\s+)?loop\b"
-    ],
-    "loops_prohibited": [
-        r"\bwithout\s+(?:using|utilizing)\s+loops?\b",
-        r"\bwithout\s+(?:using|utilizing)\s+iterative\s+looping\s+constructs\b"
-    ],
-    "stl_container_required": [
-        r"\bstd::(?:set|map|vector|unordered_map)\b"
-    ],
-    "hash_map_required": [
-        r"\b(?:hash\s*map|unordered_map)\b"
-    ],
-    "gaussian_elimination_prohibited": [
-        r"\bwithout\s+using\s+gaussian\s+elimination\b"
-    ]
-}
+# Code requirements are extracted by clause with explicit polarity
+# (required / prohibited / optional); see code_requirement_extractor.
 
 
 @lru_cache(maxsize=1)
@@ -113,43 +83,8 @@ def clean_constraint_text(raw_text):
 
 
 def extract_code_constraints(statement):
-
-    results = []
-
-    for constraint_type, patterns in CODE_PATTERNS.items():
-
-        for pattern in patterns:
-
-            match = re.search(
-                pattern,
-                statement,
-                flags=re.IGNORECASE
-            )
-
-            if match:
-                results.append({
-                    "type": constraint_type,
-                    "evidence": match.group(0),
-                    "status": "NEEDS_TEACHER_REVIEW"
-                })
-                break
-
-    # Avoid contradictory requirements from naive matching
-    types = {item["type"] for item in results}
-
-    if "recursion_prohibited" in types:
-        results = [
-            x for x in results
-            if x["type"] != "recursion_required"
-        ]
-
-    if "loops_prohibited" in types:
-        results = [
-            x for x in results
-            if x["type"] != "loop_required"
-        ]
-
-    return results
+    """Supported code constraints only (kept for existing callers)."""
+    return extract_code_requirements(statement)["code_constraints"]
 
 
 def build_prompt(problem, input_format, output_format):
@@ -381,9 +316,15 @@ def analyze_cpp_problem(
             warnings.append(provider_warning)
         warnings.extend(value_result.get("retrieval_warnings", []))
 
+    code = extract_code_requirements(source)
+    # Coding rules outside the supported taxonomy are surfaced as warnings
+    # (shown in the draft as ai_warnings), never converted or reversed into
+    # a constraint. The top-level response keys stay unchanged.
+    warnings.extend(manual_review_warnings(code["manual_review"]))
+
     return {
         "value_constraints": value_constraints,
-        "code_constraints": extract_code_constraints(source),
+        "code_constraints": code["code_constraints"],
         "teacher_approval_required": True,
         "warnings": warnings,
         "model": model_info

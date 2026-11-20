@@ -97,6 +97,33 @@ fields unchanged):
   (`status`, `method`, `k_used`, `context_tokens`, `skipped_for_budget`, `examples[{problem_id, score}]`)
   is added, and a retrieval failure adds top-level warning `RETRIEVAL_UNAVAILABLE` (the
   suggestion is then generated without examples). See `docs/AI_RAG_PHASE1_IMPLEMENTATION.md`.
+* **Value constraints from explicit bounds (2026-11-20):** `value_constraints` lists each distinct `(variable, low, high)` once, even if the bound is repeated in the statement and the input format, or written both as `1 <= N <= 100` and as "N is between 1 and 100".
+  - Indexed variables (`A[i]`, `grid[i][j]`), powers (`10^9`) and `≤` are recognised.
+  - A number followed by `^`, `*` or a decimal part is never truncated (`10^9` is no longer read as `10`).
+* **`code_constraints[]` (2026-11-20):**
+  - Fields: `{type, evidence, status: "NEEDS_TEACHER_REVIEW", rule, enforcement}`. The new `rule` and `enforcement` fields are additive, and `evidence` is now the full sentence.
+  - `rule` is `REQUIRED` or `PROHIBITED`. Prohibitions ("must not use", "do not", "cannot", "without", "avoid", "no X", "X is not allowed") are never reported as requirements.
+  - Optional wording ("may use") and bare mentions ("defined recursively") produce nothing.
+  - `enforcement` is `STATIC_CHECK` if `code_constraint_checker` verifies the key lexically, or `TEACHER_REVIEW_ONLY` if it cannot. In both cases the checker never deducts marks.
+
+  | `type` | rule | enforcement |
+  |---|---|---|
+  | `recursion_required` / `recursion_prohibited` | REQUIRED / PROHIBITED | STATIC_CHECK |
+  | `loop_required` / `loops_prohibited` (any for/while/do) | REQUIRED / PROHIBITED | STATIC_CHECK |
+  | `for_loop_required` (NEW) | REQUIRED | STATIC_CHECK |
+  | `conditional_required` (NEW; if/else, switch or `?:`) | REQUIRED | STATIC_CHECK |
+  | `function_prohibited:sort`, `:stable_sort`, `:partial_sort` (existing structured form) | PROHIBITED | STATIC_CHECK |
+  | `function_required`, `stl_container_required`, `hash_map_required` | REQUIRED | STATIC_CHECK |
+  | `dynamic_programming_required` | REQUIRED | TEACHER_REVIEW_ONLY |
+  | `gaussian_elimination_prohibited` | PROHIBITED | TEACHER_REVIEW_ONLY |
+
+* **Top-level warning `CODE_REQUIREMENT_NEEDS_MANUAL_REVIEW` (NEW code; the top-level keys are unchanged):** the statement contains a coding rule that has no safe key. Examples:
+  - "Use cin and cout";
+  - "must use a while loop";
+  - "must use sort()";
+  - contradictory instructions, in which case neither rule is emitted.
+
+  `message` quotes the sentence. The rule is **never** turned into a constraint. It appears in the draft's `ai_warnings`, and the teacher adds it manually (draft action `ADD`, category `code`) if wanted.
 * `POST /api/ai/drafts`: the draft carries the same information for display — `ai_warnings`
   (top-level warnings) and `warnings` on AI value-constraint items. Review, approval and
   finalisation rules are unchanged.

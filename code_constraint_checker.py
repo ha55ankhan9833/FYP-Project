@@ -14,7 +14,8 @@ Rules
   requires_review=True so the teacher decides; any penalty must come from
   an explicit teacher rubric policy (none exists in the current schema).
 - Constraint names are the ones produced by ai_constraint_service
-  (e.g. recursion_required) plus structured teacher forms:
+  (code_requirement_extractor.SUPPORTED, e.g. recursion_required,
+  for_loop_required, conditional_required) plus structured teacher forms:
       function_prohibited:NAME   function_required:NAME  (a call NAME(...))
       helper_required:NAME       (student DEFINES NAME and calls it)
       header_prohibited:NAME     header_required:NAME
@@ -181,6 +182,25 @@ def _check(constraint, a):
             return _result(name, INCONCLUSIVE, "no loop keyword, but macros/goto "
                            "could hide iteration")
         return _result(name, VIOLATED, "no for/while/do in code")
+
+    if key == "for_loop_required":
+        if "for" in a["tokens"]:
+            return _result(name, SATISFIED, "'for' loop keyword in code")
+        if a["has_macros"]:
+            return _result(name, INCONCLUSIVE, "no 'for' keyword, but macros could "
+                           "hide one")
+        return _result(name, VIOLATED, "no 'for' loop in code")
+
+    if key == "conditional_required":
+        # '?' can only be the conditional operator once literals are removed.
+        branches = sorted(a["tokens"] & {"if", "switch"})
+        if branches or "?" in a["code"]:
+            return _result(name, SATISFIED, "conditional(s) in code: "
+                           f"{branches + (['?:'] if '?' in a['code'] else [])}")
+        if a["has_macros"]:
+            return _result(name, INCONCLUSIVE, "no if/switch/?:, but macros could "
+                           "hide one")
+        return _result(name, VIOLATED, "no if/else, switch or ?: in code")
 
     if key in ("loops_prohibited", "loop_prohibited"):
         if loops:
