@@ -20,7 +20,8 @@ from the request body.
 | Problem-specific rubric suggestions from the offline LLM | ✅ **NEW** (nothing saved) | `POST /api/assessments/<id>/rubric/suggest` (§7) |
 | Teacher approves final rubric + test-case % in one action | ✅ **NEW** | `POST /api/assessments/<id>/rubric/approve` (§7) |
 | 10 cases always get exactly equal marks | ✅ **NEW** guard | inexact splits are refused, never rounded (§7.4) |
-| Reference solution, submitted and approved by hash | ✅ existing | `POST` / `GET` / `POST …/approve` `/api/assessments/<id>/reference-solution` |
+| Reference solution, submitted and approved by hash | ✅ existing, **now OPTIONAL (advanced)** | `POST` / `GET` / `POST …/approve` `/api/assessments/<id>/reference-solution`. Not needed when the problem matches a reviewed spec (§8). |
+| Generate without any reference upload | ✅ **NEW** | `POST /api/assessments/<id>/generate-test-cases/verified` (§8) |
 | What is still missing before generate / publish | ✅ **NEW** (read-only) | `GET /api/assessments/<id>/generation-readiness` |
 | Generate exactly 10 cases with verified outputs | ✅ existing, ⚠ **blocked for a new problem** (see §2) | `POST /api/assessments/<id>/generate-test-cases` (or `/oracle`) |
 | Read generated cases | ✅ existing | `GET /api/assessments/<id>/test-cases` |
@@ -110,9 +111,9 @@ The frontend keeps `draft_id` and `assessment_id` in state, so a retry never sta
 | 3 | `POST /api/assessments` `{course_code, assessment_type: "Assignment"\|"Quiz", title, problem_statement, input_format, output_format, total_marks, deadline_at (local ISO, future), validation_percentage, allow_late, late_penalty_marks, additional_constraints, draft_id}` | On 201, store `assessment_id`. On **409 `DRAFT_ALREADY_USED`**, use `assessment_id` from the body (no duplicate). |
 | 4a | *(Rubric Setup load)* `POST /api/assessments/<id>/rubric/suggest` `{validation_percentage}` | Offline-LLM **suggestions** for review (can take ~30–90 s on CPU). Nothing is saved. `status: "UNAVAILABLE"` → let the teacher type criteria. Re-call when the teacher changes the percentage. |
 | 4b | `POST /api/assessments/<id>/rubric/approve` `{validation_percentage, criteria:[{criterion_name, max_marks, description}]}` | **The teacher's explicit approval** of the edited rubric and the test-case %. Required before generation (409 `RUBRIC_NOT_APPROVED` otherwise). An identical retry returns `unchanged: true`. (`PUT …/rubric` still works for a fixed percentage.) |
-| 5 | Reference solution: `POST /api/assessments/<id>/reference-solution` `{source_code}`, then `GET` it, then `POST …/reference-solution/approve` `{source_hash}` | **A separate teacher review item**: show the code and hash and ask for approval. Never auto-approve. On 409 "exists", `GET` and continue. |
-| 6 | `GET /api/assessments/<id>/generation-readiness` | If `ready_to_generate` is false, show `missing_for_generation[]` and stop. Use `checks.expected_output_source.endpoint` for step 7. |
-| 7 | `POST /api/assessments/<id>/generate-test-cases` `{additional_inputs: [exact text, ≤10]}` (or `…/oracle` `{oracle_id, additional_inputs, dry_run:false}` when readiness says so) | On 201, go to step 8. On 409 `EXPECTED_OUTPUT_UNVERIFIABLE`, show `validated_inputs` as "pending verification": **no outputs, not Step 3 success**. |
+| 5 | *(none in the normal workflow — **no reference-code field**)* | Advanced only: a reference solution can still be submitted and separately approved (`…/reference-solution`), for problems that need it (§8.5). |
+| 6 | `GET /api/assessments/<id>/generation-readiness` | If `verification.status` is `VERIFICATION_REQUIRED`, show `verification.message` and stop (nothing generated). If `ready_to_generate` is false for another reason, show `missing_for_generation[]`. |
+| 7 | `POST /api/assessments/<id>/generate-test-cases/verified` `{additional_inputs, dry_run:true}`, then the same with `dry_run:false` | **The one generation call** (§8.3). The server picks the verified source. On 409 `VERIFICATION_REQUIRED`, nothing was generated. (The older `…/generate-test-cases` and `…/oracle` endpoints are unchanged.) |
 | 8 | `GET /api/assessments/<id>/test-cases` → Step 3 | Show the cases exactly as stored. Navigate to Step 3 **only** when `total == 10`. |
 | Publish (separate button) | `POST /api/assessments/<id>/sections` `{section_ids:[…]}` | Only when readiness `ready_to_publish` is true. The server also refuses with **409 `ASSESSMENT_NOT_READY`** (`missing[]`) otherwise. |
 
@@ -205,7 +206,8 @@ Nothing is inserted. Other errors are unchanged: 400 validation, and 400 when th
 **`missing_for_generation` codes:**
 - `CONSTRAINTS_NOT_APPROVED`
 - `INPUT_SCHEMA_REQUIRED`
-- `REFERENCE_SOLUTION_MISSING`
+- `VERIFICATION_REQUIRED` *(2026-11-20, replaces `REFERENCE_SOLUTION_MISSING`)* — no reviewed problem spec matches and no reference is uploaded; carries `detail` (teacher message) and `spec_match` (§8.2)
+- Reference codes below appear **only** when no reviewed spec matches (the reference is optional otherwise):
 - `REFERENCE_SOLUTION_NOT_APPROVED`
 - `REFERENCE_SOLUTION_INVALID`
 - `EXPECTED_OUTPUT_SOURCE_UNAVAILABLE`
@@ -390,6 +392,93 @@ Save response (`201`, `data`) now also carries `validation_percentage`, `rubric_
 1. Step 1: `GET /api/marks-allocation` live; `POST /api/assessments` (400 on an inexact split).
 2. Step 2 "Generate": `approve-reviewed` (unchanged contract).
 3. Rubric Setup: `…/rubric/suggest` → teacher edits/adds/removes/re-marks and picks the % → `…/rubric/approve`.
-4. Reference solution submit + **separate** approval (unchanged).
-5. `generation-readiness` → generate (preview, then save) → Step 3 reads saved cases.
+4. ~~Reference solution~~ **not part of the normal flow any more** (§8).
+5. `generation-readiness` → `…/generate-test-cases/verified` (preview, then save) → Step 3 reads saved cases.
 6. Publishing stays a separate action (guard unchanged). Nothing in this flow publishes.
+
+## 8. Reference-free generation (2026-11-20)
+
+### 8.1 What changed
+
+Teachers no longer upload, paste or write a C++ reference solution in the normal assignment/quiz flow. Expected outputs for a supported problem come from a **verified Python oracle**, which is selected through an **owner-reviewed problem specification**. A reference hash is no longer needed for that. No C++ is compiled or executed; student-code execution stays disabled.
+
+### 8.2 How the server chooses a verified output source
+
+Order (first match wins):
+1. **`VERIFIED_PROBLEM_SPEC`** (no reference): the assessment matches an entry of the server-controlled `verified_problem_specs.json`. All of these must match **exactly**, with only Unicode (`≤`→`<=`, `−`→`-`), letter case and whitespace runs normalised:
+   - `problem_statement`, `input_format` and `output_format` are each one of the entry's reviewed texts;
+   - the approved value constraints are exactly the reviewed set (line order is ignored);
+   - the approved input schema is exactly the reviewed schema (canonical `check_schema` form);
+   - the entry's oracle accepts the schema (verified domain).
+
+   There is **no keyword, title or similarity matching**. A changed output order, a reworded statement, different bounds, `distinct`/`order`/relations, or a missing period all mean "not verified".
+2. **`VERIFIED_ORACLE`** (advanced): an APPROVED, intact reference whose SHA-256 is bound to a reviewed oracle (unchanged).
+3. **`SECURE_SANDBOX` / `TRUSTED_HOST_ALLOWLIST`** (advanced, needs a reference; unchanged).
+4. Otherwise **`VERIFICATION_REQUIRED`**: nothing is generated and no outputs are invented.
+
+The registry is read from the repository file only. No API can add to it, and an entry is added only after owner review, like `trusted_reference_hashes.json`. Each entry is validated on load: its oracle must exist, its schema must be valid and inside the oracle's verified domain, and its value constraints must agree with its schema. A malformed registry or a duplicate `spec_id` makes **every** problem unverified (fail closed). Two specs matching the same assessment counts as ambiguous and is refused.
+
+When the secure save runs with a spec binding it does two more things under the same row lock: it **re-matches** the assessment against the same `spec_id`, so edits between preview and save are refused, and it **recomputes every expected output** with the oracle. It also still enforces rubric approval, the equal marks share and the no-duplicates rule.
+
+`spec_match` (in readiness and in `VERIFICATION_REQUIRED` details) tells the teacher what differs: `{"reason": "SPEC_MISMATCH", "closest_spec_id": "max_min_loops_v1", "differs_in": ["output_format"]}`. Other reasons are `NO_REVIEWED_SPECS`, `AMBIGUOUS_SPEC` and `REGISTRY_UNAVAILABLE`.
+
+### 8.3 `POST /api/assessments/<id>/generate-test-cases/verified`
+
+Teacher JWT. Body: `{}` or `{"additional_inputs": ["3\n5 5 5\n", …≤10], "dry_run": true|false}`. `dry_run` defaults to **true**. The body cannot carry `oracle_id`, a source or expected outputs; any other key returns 400.
+
+**200 (preview) / 201 (saved), `data`:**
+
+```json
+{"assessment_id": 9, "execution_mode": "verified_python_oracle",
+ "output_source": "VERIFIED_PROBLEM_SPEC", "reference_required": false,
+ "reference_solution_id": null, "oracle_id": "max_min_v1", "spec_id": "max_min_loops_v1",
+ "input_format": "approved_input_schema", "generated_count": 10, "dry_run": true,
+ "saved_count": 0, "test_cases": [{"test_number": 1, "test_name": "…", "category": "teacher_specified",
+                                    "input_data": "3\n5 5 5\n", "expected_output": "5\n5\n"}, …]}
+```
+
+On save (`dry_run:false`, 201) `test_cases` is omitted. The response adds `saved_count: 10`, `marks_per_test`, `test_marks_allocated`, `rubric_marks_allocated`, `validation_percentage` and `weighting: "EQUAL"`. Step 3 reads `GET …/test-cases`.
+
+For an advanced reference-bound source, `output_source` is `"VERIFIED_ORACLE"` and `reference_required` is `true`. Sandbox/allowlist sources support save only; preview returns 409 `PREVIEW_UNAVAILABLE`.
+
+| HTTP | `code` | When |
+|---|---|---|
+| 400 | `INVALID_REQUEST` | unknown key, `dry_run` not boolean, bad `additional_inputs` |
+| 400 | `INVALID_TEST_INPUT` | a teacher input violates the approved schema (`errors[]`) |
+| 400 | `GENERATION_REFUSED` | other validation refusal (message says why) |
+| 403 | `TEACHER_ONLY` | not a teacher token |
+| 404 | `ASSESSMENT_NOT_FOUND` | not this teacher's assessment |
+| 409 | **`VERIFICATION_REQUIRED`** | no trusted verifier; `generated_count: 0`, `saved_count: 0`, `message`, `missing_for_generation`, `verification` |
+| 409 | `RUBRIC_NOT_APPROVED` | save before the rubric is approved |
+| 409 | `TEST_CASES_ALREADY_EXIST` | retry after a save (nothing added) |
+| 409 | `PREVIEW_UNAVAILABLE` | preview requested for a sandbox/allowlist source |
+| 422 | `MARKS_ALLOCATION_INVALID` | no exact equal share (§7) |
+| 500 | `GENERATION_FAILED` | unexpected error |
+
+Teacher-facing `VERIFICATION_REQUIRED` message: *"Expected outputs for this problem cannot be verified automatically yet. No test cases were generated. …"*. Show it as is, and keep every field the teacher entered.
+
+### 8.4 Readiness additions
+
+`GET …/generation-readiness` now returns:
+
+```json
+"verification": {"status": "VERIFIED" | "VERIFICATION_REQUIRED",
+                 "source": "VERIFIED_PROBLEM_SPEC" | "VERIFIED_ORACLE" | … | null,
+                 "reference_required": false, "message": null | "<teacher message>",
+                 "generate_endpoint": "generate-test-cases/verified"}
+```
+
+`checks.expected_output_source` for a spec match is `{"source": "VERIFIED_PROBLEM_SPEC", "endpoint": "generate-test-cases/verified", "oracle_id": "max_min_v1", "spec_id": "max_min_loops_v1", "reference_required": false}`. Every source object now carries `reference_required`. With a matching spec, a missing or pending reference is **not** reported as missing; `checks.reference_solution` still shows its status for information.
+
+### 8.5 Supported problems (registry as of 2026-11-20)
+
+| spec_id | oracle | Contract |
+|---|---|---|
+| `max_min_loops_v1` | `max_min_v1` | Line 1 is `N` (1..100); line 2 is N integers (−1000..1000), no relations; prints the maximum then the minimum, each on its own line. Reviewed wording: the CSC-101 E2E assignment text (FYP_E2E_Test assessments 7–9). |
+| `max_min_loops_frontend_v1` | `max_min_v1` | Same contract, bounds and schema. Reviewed wording: the **current frontend** assignment text ("Write a C++ program that reads N integers and determines the maximum and minimum values among them. …"; output "…The first line must contain the maximum value. The second line must contain the minimum value."), copied exactly from the frontend-created assessments. Owner-approved 2026-11-20. |
+
+Each entry matches only its own texts. Mixing the statement of one entry with the output format of the other does **not** verify.
+
+Everything else returns `VERIFICATION_REQUIRED` until an owner-reviewed spec (and, if needed, a new verified oracle) is added. `prime_check_v1` and the factorial/array-sum allowlist entries remain reachable **only** through the advanced reference path.
+
+**Adding a wording or a problem** is an owner decision. Add the exact reviewed `problem_statement` / `input_format` / `output_format` text, or a new spec bound to an existing or new verified oracle, to `verified_problem_specs.json` in a reviewed commit. The unit tests check registry integrity.

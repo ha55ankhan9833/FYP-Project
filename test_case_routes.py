@@ -373,3 +373,125 @@ def generate_test_cases_from_oracle(assessment_id):
         current_app.logger.exception("Oracle Test Case Generation Error")
         return jsonify({"status": "error",
                         "message": "Unable to generate test cases"}), 500
+
+
+def _verification_required(message, details=None, readiness=None):
+    body = {"status": "error", "code": "VERIFICATION_REQUIRED", "message": message,
+            "generated_count": 0, "saved_count": 0}
+    if details:
+        body["details"] = details
+    if readiness is not None:
+        body["missing_for_generation"] = readiness.get("missing_for_generation", [])
+        body["verification"] = readiness.get("verification")
+    return jsonify(body), 409
+
+
+@test_case_bp.route(
+    "/api/assessments/<int:assessment_id>/generate-test-cases/verified",
+    methods=["POST"]
+)
+@jwt_required()
+def generate_verified_test_cases(assessment_id):
+    """
+    Teacher-only, the ONE generation call for the normal workflow. No
+    reference solution is needed when the assessment matches an
+    owner-reviewed problem spec. The server picks the verified output source
+    (reviewed problem spec -> reference-bound oracle -> sandbox / host
+    allowlist); with none it returns 409 VERIFICATION_REQUIRED and generates
+    nothing. The body can never carry expected outputs or choose a source.
+    dry_run defaults to true (preview, nothing saved).
+    """
+    from flask import request, current_app
+    from assessment_readiness_service import AssessmentNotFound, get_generation_readiness
+    from oracle_test_case_service import generate_from_verified_oracle
+    from reference_free_generation import generate_reference_free
+    from test_case_builder import StructuredInputError
+    from test_case_generation_orchestrator import (
+        ExpectedOutputsUnavailable, generate_and_save_test_cases)
+    from verified_oracles import OracleError
+    from verified_problem_specs import TEACHER_MESSAGE, VerificationRequired
+
+    if get_jwt().get("role") != "teacher":
+        return jsonify({"status": "error", "code": "TEACHER_ONLY",
+                        "message": "Teacher access required"}), 403
+    teacher_id = get_jwt_identity()
+    if not isinstance(teacher_id, str) or not teacher_id.strip():
+        return jsonify({"status": "error", "code": "TEACHER_ONLY",
+                        "message": "Invalid teacher identity"}), 403
+    teacher_id = teacher_id.strip()
+
+    body = request.get_json(silent=True)
+    if body is None and not request.get_data():
+        body = {}
+    if not isinstance(body, dict):
+        return jsonify({"status": "error", "code": "INVALID_REQUEST",
+                        "message": "Invalid JSON object"}), 400
+    body_error = _generation_body_error(body, {"additional_inputs", "dry_run"})
+    if body_error:
+        return jsonify({"status": "error", "code": "INVALID_REQUEST",
+                        "message": body_error}), 400
+    dry_run = body.get("dry_run", True)
+    if type(dry_run) is not bool:
+        return jsonify({"status": "error", "code": "INVALID_REQUEST",
+                        "message": "dry_run must be true or false"}), 400
+    extra = body.get("additional_inputs")
+
+    try:
+        readiness = get_generation_readiness(assessment_id, teacher_id)
+        source = readiness["checks"]["expected_output_source"]
+        if source is None:
+            return _verification_required(TEACHER_MESSAGE, readiness=readiness)
+
+        if source["source"] == "VERIFIED_PROBLEM_SPEC":
+            result = generate_reference_free(assessment_id, teacher_id, extra, dry_run)
+        elif source["source"] == "VERIFIED_ORACLE":
+            result = generate_from_verified_oracle(
+                assessment_id=assessment_id, teacher_id=teacher_id,
+                oracle_id=source["oracle_id"], additional_inputs=extra, dry_run=dry_run)
+            result = {**result, "output_source": "VERIFIED_ORACLE",
+                      "reference_required": True}
+        else:
+            if dry_run:
+                return jsonify({"status": "error", "code": "PREVIEW_UNAVAILABLE",
+                                "message": ("Preview is not available for this verified "
+                                            "source; send dry_run: false to generate and "
+                                            "save")}), 409
+            result = generate_and_save_test_cases(
+                assessment_id=assessment_id, teacher_id=teacher_id, additional_inputs=extra)
+            result = {**result, "output_source": source["source"],
+                      "reference_required": True, "dry_run": False}
+
+        return jsonify({
+            "status": "success",
+            "message": ("Preview only; nothing saved" if result.get("dry_run")
+                        else "Test cases saved"),
+            "data": result
+        }), 200 if result.get("dry_run") else 201
+
+    except AssessmentNotFound:
+        return jsonify({"status": "error", "code": "ASSESSMENT_NOT_FOUND",
+                        "message": "Assessment not found"}), 404
+    except VerificationRequired as error:
+        return _verification_required(error.message, error.details)
+    except ExpectedOutputsUnavailable:
+        return _verification_required(TEACHER_MESSAGE)
+    except StructuredInputError as error:
+        return jsonify({"status": "error", "code": "INVALID_TEST_INPUT",
+                        "message": str(error), "errors": error.details}), 400
+    except (OracleError, ValueError) as error:
+        coded = _marks_or_rubric_error(error)
+        if coded is not None:
+            return coded
+        message = str(error)
+        if "access denied" in message or "Assessment not found" in message:
+            return jsonify({"status": "error", "code": "ASSESSMENT_NOT_FOUND",
+                            "message": "Assessment not found"}), 404
+        if "already has test cases" in message:
+            return jsonify({"status": "error", "code": "TEST_CASES_ALREADY_EXIST",
+                            "message": "Assessment already has test cases"}), 409
+        return jsonify({"status": "error", "code": "GENERATION_REFUSED",
+                        "message": message}), 400
+    except Exception:
+        current_app.logger.exception("Verified Test Case Generation Error")
+        return jsonify({"status": "error", "code": "GENERATION_FAILED",
+                        "message": "Unable to generate test cases"}), 500

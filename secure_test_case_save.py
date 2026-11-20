@@ -18,13 +18,43 @@ MAX_INPUT_CHARS = 10_000
 MAX_OUTPUT_CHARS = 64 * 1024     # matches test_case_pipeline limit
 
 
+SPEC_FIELDS_SQL = """
+SELECT problem_statement, input_format, output_format
+FROM dbo.Assessment WITH (UPDLOCK, HOLDLOCK)
+WHERE assessment_id = ?
+"""
+
+
+def _recheck_verified_spec(cursor, assessment_id, spec_id, constraints, approved_schema,
+                           test_cases):
+    """Under the save lock: the assessment must still match exactly the same
+    reviewed spec, and every stored output must equal the spec's oracle."""
+    from verified_problem_specs import safe_match
+
+    cursor.execute(SPEC_FIELDS_SQL, assessment_id)
+    row = cursor.fetchone()
+    if row is None:
+        raise ValueError("Assessment not found")
+    spec, _ = safe_match(row[0], row[1], row[2], constraints, approved_schema)
+    if spec is None or spec["spec_id"] != spec_id:
+        raise ValueError("Verified problem specification no longer matches")
+    oracle = spec["oracle"]
+    for case in test_cases:
+        expected = (oracle.expected_output(approved_schema, case["input_data"])
+                    if approved_schema is not None
+                    else oracle.expected_output(case["input_data"].strip()))
+        if expected != case["expected_output"]:
+            raise ValueError("Expected output does not match the verified oracle")
+
+
 def save_generated_test_cases_secure(
     assessment_id,
     teacher_id,
     reference_solution_id,
     expected_source_hash,
     test_cases,
-    structured=False
+    structured=False,
+    verified_spec_id=None
 ):
     """
     structured=False (default): legacy 1-3 integer inputs, unchanged rules.
@@ -32,6 +62,14 @@ def save_generated_test_cases_secure(
     the exact text (spaces/newlines) is kept and validated against the schema
     re-read under lock. A mismatch between `structured` and the approved draft
     (schema added/removed) is refused.
+
+    Output source (exactly one):
+      reference binding   reference_solution_id + expected_source_hash: the
+                          APPROVED reference must be intact and unchanged.
+      problem-spec binding verified_spec_id (reference args None): the
+                          assessment's full specification is re-matched under
+                          lock against verified_problem_specs.json and must
+                          still match exactly that spec.
     """
     if type(structured) is not bool:
         raise ValueError("structured must be true or false")
@@ -42,11 +80,17 @@ def save_generated_test_cases_secure(
     if not isinstance(teacher_id, str) or not teacher_id.strip():
         raise ValueError("Invalid teacher ID")
 
-    if type(reference_solution_id) is not int or reference_solution_id <= 0:
-        raise ValueError("Invalid reference solution ID")
+    if verified_spec_id is not None:
+        if not isinstance(verified_spec_id, str) or not verified_spec_id.strip():
+            raise ValueError("Invalid verified spec ID")
+        if reference_solution_id is not None or expected_source_hash is not None:
+            raise ValueError("Use either a reference binding or a verified spec, not both")
+    else:
+        if type(reference_solution_id) is not int or reference_solution_id <= 0:
+            raise ValueError("Invalid reference solution ID")
 
-    if not isinstance(expected_source_hash, str) or len(expected_source_hash) != 64:
-        raise ValueError("Invalid expected source hash")
+        if not isinstance(expected_source_hash, str) or len(expected_source_hash) != 64:
+            raise ValueError("Invalid expected source hash")
 
     if not isinstance(test_cases, list) or not test_cases:
         raise ValueError("Test cases are required")
@@ -134,32 +178,36 @@ def save_generated_test_cases_secure(
         if approval["approved_code_constraints"] != code_constraints:
             raise ValueError("Approved code constraints changed")
 
-        cursor.execute("""
-            SELECT source_code, source_hash, language, approval_status
-            FROM dbo.ReferenceSolution WITH (UPDLOCK, HOLDLOCK)
-            WHERE assessment_id = ? AND reference_solution_id = ?
-        """, assessment_id, reference_solution_id)
-
-        reference = cursor.fetchone()
-
-        if reference is None:
-            raise ValueError("Reference solution not found")
-
-        source_code, stored_hash, language, status = reference
-
-        if status != "APPROVED" or language != "cpp":
-            raise ValueError("Approved C++ reference required")
-
-        actual_hash = hashlib.sha256(
-            source_code.encode("utf-8")
-        ).hexdigest()
-
-        # Expected outputs were produced from exactly this approved,
-        # hash-verified reference of THIS assessment (no fixed IDs).
-        if actual_hash != stored_hash or actual_hash != expected_source_hash:
-            raise ValueError("Reference source hash mismatch")
-
         approved_schema = approval.get("approved_input_schema")
+
+        if verified_spec_id is None:
+            cursor.execute("""
+                SELECT source_code, source_hash, language, approval_status
+                FROM dbo.ReferenceSolution WITH (UPDLOCK, HOLDLOCK)
+                WHERE assessment_id = ? AND reference_solution_id = ?
+            """, assessment_id, reference_solution_id)
+
+            reference = cursor.fetchone()
+
+            if reference is None:
+                raise ValueError("Reference solution not found")
+
+            source_code, stored_hash, language, status = reference
+
+            if status != "APPROVED" or language != "cpp":
+                raise ValueError("Approved C++ reference required")
+
+            actual_hash = hashlib.sha256(
+                source_code.encode("utf-8")
+            ).hexdigest()
+
+            # Expected outputs were produced from exactly this approved,
+            # hash-verified reference of THIS assessment (no fixed IDs).
+            if actual_hash != stored_hash or actual_hash != expected_source_hash:
+                raise ValueError("Reference source hash mismatch")
+        else:
+            _recheck_verified_spec(cursor, assessment_id, verified_spec_id,
+                                   constraints, approved_schema, test_cases)
 
         if structured != (approved_schema is not None):
             raise ValueError("Approved input schema changed")
@@ -225,6 +273,9 @@ def save_generated_test_cases_secure(
             "success": True,
             "assessment_id": assessment_id,
             "reference_solution_id": reference_solution_id,
+            "output_source": ("VERIFIED_PROBLEM_SPEC" if verified_spec_id
+                              else "APPROVED_REFERENCE"),
+            **({"spec_id": verified_spec_id} if verified_spec_id else {}),
             "saved_count": len(test_cases),
             "total_marks": str(total_marks),
             "validation_percentage": allocation["validation_percentage"],

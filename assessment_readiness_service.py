@@ -7,7 +7,10 @@ Nothing is written, compiled or executed. Every check reuses the rule the
 real endpoint enforces:
   constraints   test_case_approval_validator.validate_assessment_approval
   input format  approved structured schema, or the legacy integer grammar
-  reference     ReferenceSolution APPROVED, language cpp, intact SHA-256
+  spec          verified_problem_specs (owner-reviewed exact problem spec bound
+                to a verified oracle): when it matches, NO reference is needed
+  reference     (only without a spec) ReferenceSolution APPROVED, language
+                cpp, intact SHA-256; none -> VERIFICATION_REQUIRED
   outputs       sandbox (secure_execution_gate) / owner-approved host
                 allowlist (trusted_reference_hashes.json) / reviewed oracle
                 bound to the reference hash (verified_oracles), exactly as
@@ -24,7 +27,8 @@ import hashlib
 from db import get_connection
 
 ASSESSMENT_SQL = """
-SELECT assessment_id, course_code, total_marks, validation_percentage
+SELECT assessment_id, course_code, total_marks, validation_percentage,
+       problem_statement, input_format, output_format
 FROM dbo.Assessment
 WHERE assessment_id = ? AND teacher_id = ?;
 """
@@ -66,8 +70,10 @@ def _output_source(source_hash, input_schema, sandbox_available, trusted_hashes,
 
 
 def get_generation_readiness(assessment_id, teacher_id, connection_factory=get_connection,
-                             sandbox_available=None, trusted_hashes=None, oracles=None):
+                             sandbox_available=None, trusted_hashes=None, oracles=None,
+                             specs=None):
     from assessment_rubric_service import check_rubric_ready
+    from verified_problem_specs import TEACHER_MESSAGE, public_source, safe_match
     from marks_allocation import MarksAllocationError, compute_allocation
     from generic_test_inputs import parse_approved_value_constraints
     from test_case_approval_validator import validate_assessment_approval
@@ -116,34 +122,50 @@ def get_generation_readiness(assessment_id, teacher_id, connection_factory=get_c
                 except ValueError as error:
                     missing.append({"code": "INPUT_SCHEMA_REQUIRED", "detail": str(error)})
 
-        # Reference solution
+        # Reference-free: an owner-reviewed problem spec bound to a verified oracle
+        spec, spec_details = None, None
+        if approval is not None and input_format is not None:
+            spec, spec_details = safe_match(
+                row[4], row[5], row[6], approval["approved_value_constraints"],
+                input_schema, **({"specs": specs} if specs is not None else {}))
+
+        # Reference solution: optional advanced path, required only without a spec
         cursor.execute(REFERENCE_SQL, (assessment_id,))
         ref = cursor.fetchone()
         reference = {"status": "MISSING"}
         source_hash = None
+        reference_missing = []
         if ref is None:
-            missing.append({"code": "REFERENCE_SOLUTION_MISSING"})
+            reference_missing.append({"code": "VERIFICATION_REQUIRED",
+                                      "detail": TEACHER_MESSAGE, "spec_match": spec_details})
         else:
             intact = hashlib.sha256((ref[1] or "").encode("utf-8")).hexdigest() == ref[2]
             reference = {"reference_solution_id": int(ref[0]), "status": ref[4],
                          "source_hash": ref[2], "language": ref[3], "hash_intact": intact}
             if ref[4] != "APPROVED":
-                missing.append({"code": "REFERENCE_SOLUTION_NOT_APPROVED"})
+                reference_missing.append({"code": "REFERENCE_SOLUTION_NOT_APPROVED"})
             elif ref[3] != "cpp" or not intact:
-                missing.append({"code": "REFERENCE_SOLUTION_INVALID"})
+                reference_missing.append({"code": "REFERENCE_SOLUTION_INVALID"})
             else:
                 source_hash = ref[2]
 
         # Expected-output source (decided exactly as the endpoints do)
         output_source = None
-        if source_hash is not None:
-            output_source = _output_source(source_hash, input_schema, sandbox_available,
-                                           trusted_hashes, oracles)
-            if output_source is None:
-                missing.append({
-                    "code": "EXPECTED_OUTPUT_SOURCE_UNAVAILABLE",
-                    "detail": ("No secure sandbox, no owner-approved host allowlist entry "
-                               "and no verified oracle for this reference hash")})
+        if spec is not None:
+            output_source = public_source(spec)
+        else:
+            missing.extend(reference_missing)
+            if source_hash is not None:
+                output_source = _output_source(source_hash, input_schema, sandbox_available,
+                                               trusted_hashes, oracles)
+                if output_source is None:
+                    missing.append({
+                        "code": "EXPECTED_OUTPUT_SOURCE_UNAVAILABLE",
+                        "detail": ("No secure sandbox, no owner-approved host allowlist entry "
+                                   "and no verified oracle for this reference hash"),
+                        "spec_match": spec_details})
+        if output_source is not None:
+            output_source["reference_required"] = spec is None
 
         cursor.execute(TEST_COUNT_SQL, (assessment_id,))
         test_count = int(cursor.fetchone()[0])
@@ -182,6 +204,13 @@ def get_generation_readiness(assessment_id, teacher_id, connection_factory=get_c
 
     return {
         "assessment_id": assessment_id,
+        "verification": {
+            "status": "VERIFIED" if output_source else "VERIFICATION_REQUIRED",
+            "source": output_source["source"] if output_source else None,
+            "reference_required": bool(output_source and output_source["reference_required"]),
+            "message": (None if output_source else TEACHER_MESSAGE),
+            "generate_endpoint": "generate-test-cases/verified",
+        },
         "ready_to_generate": not missing,
         "missing_for_generation": missing,
         "ready_to_publish": not publish_missing,

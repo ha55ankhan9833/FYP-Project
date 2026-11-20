@@ -727,13 +727,7 @@ class AssessmentMarksValidationRouteTests(unittest.TestCase):
 class ReadinessMarksTests(unittest.TestCase):
 
     def check(self, total=10, pct=50, rubric_ok=True):
-        base = readiness_responder()
-
-        def responder(sql, params):
-            if sql.startswith("SELECT assessment_id, course_code, total_marks"):
-                return [(7, "CSC-101", D(str(total)), D(str(pct)))], -1
-            return base(sql, params)
-        conn = FakeConnection(responder)
+        conn = FakeConnection(readiness_responder(marks=(D(str(total)), D(str(pct)))))
 
         def rubric(*_):
             if not rubric_ok:

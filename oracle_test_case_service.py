@@ -39,6 +39,32 @@ def structured_oracle_runner(oracle, input_schema):
     return run_batch
 
 
+def build_oracle_test_cases(oracle, constraints, input_schema, additional_inputs):
+    """The 10 cases, outputs computed by the oracle (two algorithms that must
+    agree), every input validated against the approved schema/constraints."""
+    if input_schema is not None:
+        if not oracle.structured:
+            raise OracleError(
+                "This oracle supports only the legacy integer input format; "
+                "this assessment uses a structured input schema")
+        oracle.check_schema(input_schema)
+        test_cases = build_structured_test_cases(
+            input_schema, structured_oracle_runner(oracle, input_schema),
+            additional_inputs)
+        validate_generated_test_cases(constraints, test_cases,
+                                      input_schema=input_schema)
+    else:
+        if oracle.structured:
+            raise OracleError(
+                "This oracle requires a teacher-approved structured input schema")
+        oracle.check_domain(parse_approved_value_constraints(constraints))
+        test_cases = build_test_cases(
+            constraints, oracle_runner(oracle),
+            additional_inputs=additional_inputs)
+        validate_generated_test_cases(constraints, test_cases)
+    return test_cases
+
+
 def generate_from_verified_oracle(
     assessment_id,
     teacher_id,
@@ -65,27 +91,8 @@ def generate_from_verified_oracle(
 
     constraints = preflight["constraints"]
     input_schema = preflight.get("input_schema")
-
-    if input_schema is not None:
-        if not oracle.structured:
-            raise OracleError(
-                "This oracle supports only the legacy integer input format; "
-                "this assessment uses a structured input schema")
-        oracle.check_schema(input_schema)
-        test_cases = build_structured_test_cases(
-            input_schema, structured_oracle_runner(oracle, input_schema),
-            additional_inputs)
-        validate_generated_test_cases(constraints, test_cases,
-                                      input_schema=input_schema)
-    else:
-        if oracle.structured:
-            raise OracleError(
-                "This oracle requires a teacher-approved structured input schema")
-        oracle.check_domain(parse_approved_value_constraints(constraints))
-        test_cases = build_test_cases(
-            constraints, oracle_runner(oracle),
-            additional_inputs=additional_inputs)
-        validate_generated_test_cases(constraints, test_cases)
+    test_cases = build_oracle_test_cases(oracle, constraints, input_schema,
+                                         additional_inputs)
 
     summary = {
         "assessment_id": assessment_id,

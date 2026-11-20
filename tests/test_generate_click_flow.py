@@ -307,12 +307,12 @@ def finalized_draft(schema=SCHEMA):
 
 
 def readiness_responder(owned=True, draft=None, reference=("APPROVED", SOURCE, SOURCE_HASH),
-                        tests=0, sections=0):
+                        tests=0, sections=0, problem=("p", "i", "o"), marks=(10, 50)):
     draft = draft if draft is not None else finalized_draft()
 
     def responder(sql, params):
         if sql.startswith("SELECT assessment_id, course_code, total_marks"):
-            return ([(7, "CSC-101", 10, 50)] if owned else []), -1
+            return ([(7, "CSC-101", *marks, *problem)] if owned else []), -1
         if "FROM dbo.ConstraintReviewDraft WITH (UPDLOCK, HOLDLOCK) WHERE assessment_id" in sql:
             return [(json.dumps(draft), 1)], -1
         if "SELECT value_constraints, code_constraints FROM dbo.Assessment" in sql:
@@ -369,7 +369,8 @@ class ReadinessTests(unittest.TestCase):
         result = self.check(trusted=frozenset({SOURCE_HASH}))
         self.assertTrue(result["ready_to_generate"])
         self.assertEqual(result["checks"]["expected_output_source"],
-                         {"source": "TRUSTED_HOST_ALLOWLIST", "endpoint": "generate-test-cases"})
+                         {"source": "TRUSTED_HOST_ALLOWLIST", "endpoint": "generate-test-cases",
+                          "reference_required": True})
 
     def test_sandbox_is_ready(self):
         self.assertEqual(self.check(sandbox=True)["checks"]["expected_output_source"]["source"],
@@ -385,8 +386,9 @@ class ReadinessTests(unittest.TestCase):
         self.assertTrue(legacy["ready_to_generate"])
 
     def test_reference_problems(self):
-        self.assertIn("REFERENCE_SOLUTION_MISSING",
-                      self.codes(self.check(readiness_responder(reference=None))))
+        no_ref = self.check(readiness_responder(reference=None))
+        self.assertEqual(self.codes(no_ref), ["VERIFICATION_REQUIRED"])
+        self.assertEqual(no_ref["verification"]["status"], "VERIFICATION_REQUIRED")
         self.assertIn("REFERENCE_SOLUTION_NOT_APPROVED",
                       self.codes(self.check(readiness_responder(
                           reference=("PENDING", SOURCE, SOURCE_HASH)))))

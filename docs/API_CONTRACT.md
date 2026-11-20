@@ -177,6 +177,22 @@ Details, examples and the click sequence: `docs/STEP1_3_GENERATION_CONTRACT.md` 
 | POST | `/api/assessments/<id>/rubric/suggest` | `{}` or `{validation_percentage}` | 200 `{suggestion:{status: GENERATED\|UNAVAILABLE\|NOT_REQUIRED, approved:false, allocation, criteria:[{criterion_name, description, suggested_marks, model_marks}], warnings:[{code, message}]}}`; read-only; `suggested_marks` sum exactly to `rubric_marks`; when the LLM is down, `status:UNAVAILABLE`, `criteria:[]` | 400 `INVALID_REQUEST`, 403, 404 `ASSESSMENT_NOT_FOUND`, 409 `CONSTRAINTS_NOT_APPROVED`, 422 `MARKS_ALLOCATION_INVALID`, 500 `RUBRIC_SUGGESTION_FAILED` |
 | POST | `/api/assessments/<id>/rubric/approve` | exactly `{validation_percentage, criteria:[{criterion_name, max_marks, description?}]}` | 200 `{rubric:{approved:true, unchanged, allocation, criteria_saved, criteria}}`; percentage + criteria saved atomically; identical retry → `unchanged:true`, no writes | 400 `INVALID_REQUEST`, 403, 404 `ASSESSMENT_NOT_FOUND`, 409 `RUBRIC_LOCKED` / `TEST_CASES_ALREADY_SAVED`, 422 `MARKS_ALLOCATION_INVALID` / `RUBRIC_TOTAL_MISMATCH` / `INVALID_CRITERION`, 503 `RUBRIC_STORAGE_UNAVAILABLE` |
 
+## Teacher — reference-free generation (NEW, 2026-11-20)
+
+The reference solution is **optional** (advanced). The normal flow has no reference-code field. Details: `docs/STEP1_3_GENERATION_CONTRACT.md` §8.
+
+| Method | Path | Body | Success | Errors |
+|---|---|---|---|---|
+| POST | `/api/assessments/<id>/generate-test-cases/verified` | `{additional_inputs?: [≤10 exact texts], dry_run?: bool (default true)}`; no other keys | 200 preview / 201 saved: `{data:{output_source:"VERIFIED_PROBLEM_SPEC"\|"VERIFIED_ORACLE"\|…, reference_required, reference_solution_id, oracle_id, spec_id, generated_count, saved_count, test_cases? (preview), marks_per_test, test_marks_allocated, rubric_marks_allocated, weighting:"EQUAL"}}` | 400 `INVALID_REQUEST`/`INVALID_TEST_INPUT`/`GENERATION_REFUSED`, 403 `TEACHER_ONLY`, 404 `ASSESSMENT_NOT_FOUND`, **409 `VERIFICATION_REQUIRED`** (nothing generated), 409 `RUBRIC_NOT_APPROVED`/`TEST_CASES_ALREADY_EXIST`/`PREVIEW_UNAVAILABLE`, 422 `MARKS_ALLOCATION_INVALID`, 500 `GENERATION_FAILED` |
+
+The server chooses the output source; the client never names an oracle or sends outputs. A source is chosen in this order:
+1. an owner-reviewed problem spec (`verified_problem_specs.json`) that exactly matches the statement, input/output format, approved bounds and schema;
+2. a reference-bound verified oracle;
+3. a sandbox or host allowlist;
+4. otherwise `VERIFICATION_REQUIRED`.
+
+`generation-readiness` adds `verification{status, source, reference_required, message, generate_endpoint}`; `VERIFICATION_REQUIRED` replaces `REFERENCE_SOLUTION_MISSING`.
+
 **Generation and readiness changes:**
 - The test-case save (both generation endpoints, `dry_run:false`) now requires an approved rubric (**409 `RUBRIC_NOT_APPROVED`**) and an exact equal share (**422 `MARKS_ALLOCATION_INVALID`**). All 10 rows get `per_case_marks`.
 - The save response adds `validation_percentage`, `rubric_marks_allocated` and `weighting:"EQUAL"`.
